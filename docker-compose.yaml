@@ -98,7 +98,7 @@ services:
       STOCK_DB_USER: ${STOCK_DB_USER:-stock_app}
       STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env}
     ports:
-      - "${VIEWER_PORT:-8081}:8081"
+      - "${VIEWER_PORT:-4201}:8081"
     depends_on:
       postgres:
         condition: service_healthy

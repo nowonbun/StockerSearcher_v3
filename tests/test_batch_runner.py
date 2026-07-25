@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from io import BytesIO, StringIO
 from pathlib import Path
+from unittest.mock import Mock
 
 from batch.config import command_for, tasks_for
 from batch.history import HistoryStore
@@ -34,3 +36,26 @@ class BatchRunnerTests(unittest.TestCase):
                         pass
         finally:
             runner.fcntl = original_fcntl
+
+    def test_streamed_subprocess_output_is_persisted_and_emitted(self) -> None:
+        log_file = StringIO()
+        emitted: list[str] = []
+
+        runner._stream_process_output(
+            BytesIO(b"first line\ninvalid: \xff\n"), log_file, emitted.append
+        )
+
+        self.assertEqual(log_file.getvalue(), "first line\ninvalid: �\n")
+        self.assertEqual(emitted, ["first line\ninvalid: �\n"])
+
+    def test_wrapper_command_and_pgid_read_are_task_specific(self) -> None:
+        pgid_path = Path("state/run_collect.pgid")
+        command = runner._wrapped_command(["python", "dataset/example.py"], pgid_path)
+        self.assertEqual(command[-3:], ["--", "python", "dataset/example.py"])
+        self.assertIn("batch.process_wrapper", command)
+        missing_path = Mock()
+        missing_path.read_text.side_effect = OSError()
+        self.assertIsNone(runner._read_pgid(missing_path))
+        present_path = Mock()
+        present_path.read_text.return_value = "12345\n"
+        self.assertEqual(runner._read_pgid(present_path), 12345)

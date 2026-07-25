@@ -47,7 +47,13 @@ def stocksearcher_batch(
                 "delay_seconds": str(int(delay_seconds)),
             }
 
-    return run_batch(market, mode, trigger_source=trigger_source)
+    logger = get_run_logger()
+    return run_batch(
+        market,
+        mode,
+        trigger_source=trigger_source,
+        output_callback=lambda text: logger.info(text.rstrip("\n")),
+    )
 
 
 def main() -> None:
