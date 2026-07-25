@@ -80,10 +80,13 @@ def _write_output(
     log_file: TextIO,
     text: str,
     output_callback: OutputCallback | None,
+    emit_output: bool = True,
 ) -> None:
     """Persist output first, then expose it to the current execution surface."""
     log_file.write(text)
     log_file.flush()
+    if not emit_output:
+        return
     if output_callback is not None:
         try:
             output_callback(text)
@@ -98,10 +101,16 @@ def _stream_process_output(
     stream: BinaryIO,
     log_file: TextIO,
     output_callback: OutputCallback | None,
+    emit_output: bool = True,
 ) -> None:
     """Copy bounded binary chunks to the persistent log and live execution output."""
     while chunk := stream.read1(4096):
-        _write_output(log_file, chunk.decode("utf-8", errors="replace"), output_callback)
+        _write_output(
+            log_file,
+            chunk.decode("utf-8", errors="replace"),
+            output_callback,
+            emit_output,
+        )
 
 
 def _wrapped_command(command: list[str], pgid_path: Path) -> list[str]:
@@ -150,6 +159,7 @@ def run_batch(
     trigger_source: str = "cli",
     config: BatchConfig | None = None,
     output_callback: OutputCallback | None = None,
+    stream_subprocess_output: bool = True,
 ) -> dict[str, str]:
     market = market.upper()
     config = config or BatchConfig.from_environment()
@@ -192,7 +202,7 @@ def run_batch(
                     assert process.stdout is not None
                     output_thread = threading.Thread(
                         target=_stream_process_output,
-                        args=(process.stdout, log_file, output_callback),
+                        args=(process.stdout, log_file, None, stream_subprocess_output),
                         daemon=True,
                     )
                     output_thread.start()

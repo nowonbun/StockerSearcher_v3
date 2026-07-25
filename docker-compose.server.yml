@@ -59,7 +59,7 @@ services:
       # Must be reachable from the browser opening the Prefect UI.
       PREFECT_SERVER_UI_API_URL: ${PREFECT_SERVER_UI_API_URL:?set PREFECT_SERVER_UI_API_URL in .env.server}
     volumes:
-      - prefect-state:/root/.prefect
+      - ./data/metadata:/root/.prefect
     ports:
       - "${PREFECT_UI_PORT:-4200}:4200"
     healthcheck:
@@ -96,6 +96,5 @@ services:
 
 volumes:
   batch-state:
-  prefect-state:
   stock-data:
   postgres-db-volume:

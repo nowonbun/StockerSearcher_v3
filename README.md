@@ -68,7 +68,24 @@ Prefect UI 실행과 같은 시장·같은 시간에 겹치면 Linux `flock`이 
 - `logs/`: 각 실행의 표준 출력과 표준 오류 통합 로그
 - `locks/`: 실행 중인 시장별 Linux advisory lock 파일
 
-SQLite는 WAL 모드와 10초 busy timeout을 사용합니다. Prefect UI 기록은 별도 `prefect-state` 볼륨에 보존됩니다.
+SQLite는 WAL 모드와 10초 busy timeout을 사용합니다.
+
+| 저장소 | 컨테이너 경로 | 호스트 경로 | 저장 내용 |
+| --- | --- | --- | --- |
+| `batch-state` Docker 볼륨 | `/var/lib/stock-batch` | Docker 관리 경로 | 자체 실행 이력 SQLite(`history.sqlite3`), 하위 작업 전체 로그, 시장별 잠금 파일 |
+| Prefect 메타데이터 | `/root/.prefect` | `./data/metadata` | Prefect SQLite(`./data/metadata/prefect.db`): Deployment, 스케줄, Flow Run, Prefect UI 로그 메타데이터 |
+
+Prefect UI에는 작업 시작·종료·취소·시간 초과 같은 요약 이벤트만 기록합니다. dataset/predict의 행 단위 상세 출력은 Prefect SQLite에 중복 저장하지 않고 `batch-state`의 실행별 로그 파일에서 확인합니다.
+
+기존 `prefect-state` Docker 볼륨에 저장된 Deployment와 실행 이력을 유지하려면, Compose를 재기동하기 전에 현재 서버에서 아래와 같이 복사합니다. 이 과정은 기존 볼륨을 삭제하지 않습니다.
+
+```bash
+mkdir -p ./data/metadata
+docker run --rm \
+  -v stockersearcher_v3_prefect-state:/src:ro \
+  -v "$(pwd)/data/metadata:/dst" \
+  busybox cp -a /src/. /dst/
+```
 각 수집·예측 하위 작업의 기본 시간 제한은 7,200초이며, `BATCH_TASK_TIMEOUT_SECONDS`로 변경할 수 있습니다.
 
 ## 롤백

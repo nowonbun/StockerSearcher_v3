@@ -53,6 +53,7 @@ def stocksearcher_batch(
         mode,
         trigger_source=trigger_source,
         output_callback=lambda text: logger.info(text.rstrip("\n")),
+        stream_subprocess_output=False,
     )
 
 

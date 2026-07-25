@@ -48,6 +48,17 @@ class BatchRunnerTests(unittest.TestCase):
         self.assertEqual(log_file.getvalue(), "first line\ninvalid: �\n")
         self.assertEqual(emitted, ["first line\ninvalid: �\n"])
 
+    def test_streamed_subprocess_output_can_be_persisted_without_emission(self) -> None:
+        log_file = StringIO()
+        emitted: list[str] = []
+
+        runner._stream_process_output(
+            BytesIO(b"detail row\n"), log_file, emitted.append, emit_output=False
+        )
+
+        self.assertEqual(log_file.getvalue(), "detail row\n")
+        self.assertEqual(emitted, [])
+
     def test_wrapper_command_and_pgid_read_are_task_specific(self) -> None:
         pgid_path = Path("state/run_collect.pgid")
         command = runner._wrapped_command(["python", "dataset/example.py"], pgid_path)

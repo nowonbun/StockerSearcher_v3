@@ -67,7 +67,7 @@ services:
       # Browser-facing API address. Batch containers continue to use internal Docker DNS.
       PREFECT_SERVER_UI_API_URL: ${PREFECT_SERVER_UI_API_URL:-http://localhost:4200/api}
     volumes:
-      - prefect-state:/root/.prefect
+      - ./data/metadata:/root/.prefect
     ports:
       - "${PREFECT_UI_PORT:-4200}:4200"
     healthcheck:
@@ -106,4 +106,3 @@ services:
 
 volumes:
   batch-state:
-  prefect-state:
