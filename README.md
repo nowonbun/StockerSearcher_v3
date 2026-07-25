@@ -22,7 +22,7 @@ docker compose build
 docker compose up -d
 ```
 
-Prefect UI는 `http://localhost:4200`에서 엽니다. `prefect-runner`가 만든 `stocksearcher` 배포를 실행하면 시장과 모드를 입력하여 수동 실행할 수 있습니다.
+Prefect UI는 `http://localhost:4200`에서 엽니다. `prefect-runner`가 만든 `stocksearcher` 배포를 실행하면 시장과 모드를 입력하여 수동 실행할 수 있습니다. 다른 장비의 브라우저로 접속하는 경우 `.env`의 `PREFECT_SERVER_UI_API_URL`을 브라우저가 실제로 사용하는 `http://<host-ip-or-hostname>:4200/api` 주소로 설정해야 합니다.
 
 ## 수동 실행
 

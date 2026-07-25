@@ -56,6 +56,8 @@ services:
     command: prefect server start --host 0.0.0.0
     environment:
       PREFECT_HOME: /root/.prefect
+      # Must be reachable from the browser opening the Prefect UI.
+      PREFECT_SERVER_UI_API_URL: ${PREFECT_SERVER_UI_API_URL:?set PREFECT_SERVER_UI_API_URL in .env.server}
     volumes:
       - prefect-state:/root/.prefect
     ports:
