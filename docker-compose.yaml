@@ -18,6 +18,7 @@ x-batch-common: &batch-common
     BATCH_SOURCE_DIR: /opt/stocksearcher
     BATCH_STATE_DIR: /var/lib/stock-batch
     BATCH_LOG_DIR: /var/lib/stock-batch/logs
+    BATCH_TASK_TIMEOUT_SECONDS: ${BATCH_TASK_TIMEOUT_SECONDS:-7200}
     PREFECT_API_URL: http://prefect-server:4200/api
     BATCH_SCHEDULE_MODE: ${BATCH_SCHEDULE_MODE:-collect}
     BATCH_SCHEDULE_JP: ${BATCH_SCHEDULE_JP:-0 12,18 * * 1-5}
