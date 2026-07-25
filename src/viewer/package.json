@@ -1,0 +1,16 @@
+{
+  "name": "stock-searcher-viewer",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "nuxt": "^3.17.0"
+  },
+  "dependencies": {
+    "pg": "^8.13.3"
+  }
+}

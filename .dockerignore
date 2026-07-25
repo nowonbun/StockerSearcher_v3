@@ -1,0 +1,11 @@
+.env
+.env.server
+logs/
+data/
+plugins/
+__pycache__/
+*.py[cod]
+src/env/config.ini
+src/create_model/log/
+src/models/*.pt
+postgressql/

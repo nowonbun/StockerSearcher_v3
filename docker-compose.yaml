@@ -1,0 +1,107 @@
+x-batch-common: &batch-common
+  build:
+    context: .
+  image: ${BATCH_IMAGE:-stocksearcher-batch:local}
+  environment: &batch-environment
+    CHROME_BIN: /usr/bin/chromium
+    CHROMEDRIVER_PATH: /usr/bin/chromedriver
+    OUTPUT_DIR: /opt/stock-data
+    STOCK_DB_HOST: postgres
+    STOCK_DB_PORT: "5432"
+    STOCK_DB_NAME: ${STOCK_DB_NAME:-stock}
+    STOCK_DB_USER: ${STOCK_DB_USER:-stock_app}
+    STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env}
+    STOCK_START_DATE: "2023-01-01"
+    STOCK_END_DATE: "2099-12-31"
+    STOCK_PERIOD: "3"
+    PYTHONUNBUFFERED: "1"
+    BATCH_SOURCE_DIR: /opt/stocksearcher
+    BATCH_STATE_DIR: /var/lib/stock-batch
+    BATCH_LOG_DIR: /var/lib/stock-batch/logs
+    PREFECT_API_URL: http://prefect-server:4200/api
+    BATCH_SCHEDULE_MODE: ${BATCH_SCHEDULE_MODE:-collect}
+    BATCH_SCHEDULE_JP: ${BATCH_SCHEDULE_JP:-0 12,18 * * 1-5}
+    BATCH_SCHEDULE_KR: ${BATCH_SCHEDULE_KR:-0 14,20 * * 1-5}
+    BATCH_MAX_SCHEDULE_DELAY_SECONDS: ${BATCH_MAX_SCHEDULE_DELAY_SECONDS:-300}
+  volumes:
+    - ./data:/opt/stock-data
+    - ./src:/opt/stocksearcher:ro
+    - batch-state:/var/lib/stock-batch
+  depends_on:
+    postgres:
+      condition: service_healthy
+    prefect-server:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      # Keep the existing PostgreSQL cluster credentials unchanged during cutover.
+      # The legacy airflow database is not used by this stack and is retained for rollback.
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-airflow}
+      STOCK_DB_USER: ${STOCK_DB_USER:-stock_app}
+      STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env}
+      STOCK_DB_NAME: ${STOCK_DB_NAME:-stock}
+    volumes:
+      - ./postgressql:/var/lib/postgresql/data
+      - ./src/database/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  prefect-server:
+    build:
+      context: .
+    image: ${BATCH_IMAGE:-stocksearcher-batch:local}
+    command: prefect server start --host 0.0.0.0
+    environment:
+      PREFECT_HOME: /root/.prefect
+    volumes:
+      - prefect-state:/root/.prefect
+    ports:
+      - "${PREFECT_UI_PORT:-4200}:4200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4200/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+  prefect-runner:
+    <<: *batch-common
+    command: python -m batch.prefect_flows
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  viewer:
+    build:
+      context: ./src/viewer
+    image: ${VIEWER_IMAGE:-stocksearcher-viewer:local}
+    environment:
+      STOCK_DB_HOST: postgres
+      STOCK_DB_PORT: "5432"
+      STOCK_DB_NAME: ${STOCK_DB_NAME:-stock}
+      STOCK_DB_USER: ${STOCK_DB_USER:-stock_app}
+      STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env}
+    ports:
+      - "${VIEWER_PORT:-8081}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  batch-state:
+  prefect-state:

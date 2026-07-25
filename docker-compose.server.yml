@@ -1,0 +1,99 @@
+x-batch-common: &batch-common
+  image: ${BATCH_IMAGE:?set BATCH_IMAGE in .env.server}
+  environment: &batch-environment
+    CHROME_BIN: /usr/bin/chromium
+    CHROMEDRIVER_PATH: /usr/bin/chromedriver
+    OUTPUT_DIR: /opt/stock-data
+    STOCK_DB_HOST: postgres
+    STOCK_DB_PORT: "5432"
+    STOCK_DB_NAME: ${STOCK_DB_NAME:-stock}
+    STOCK_DB_USER: ${STOCK_DB_USER:?set STOCK_DB_USER in .env.server}
+    STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env.server}
+    STOCK_START_DATE: "2023-01-01"
+    STOCK_END_DATE: "2099-12-31"
+    STOCK_PERIOD: "3"
+    PYTHONUNBUFFERED: "1"
+    BATCH_SOURCE_DIR: /opt/stocksearcher
+    BATCH_STATE_DIR: /var/lib/stock-batch
+    BATCH_LOG_DIR: /var/lib/stock-batch/logs
+    PREFECT_API_URL: http://prefect-server:4200/api
+    BATCH_SCHEDULE_MODE: ${BATCH_SCHEDULE_MODE:-collect}
+    BATCH_SCHEDULE_JP: ${BATCH_SCHEDULE_JP:-0 12,18 * * 1-5}
+    BATCH_SCHEDULE_KR: ${BATCH_SCHEDULE_KR:-0 14,20 * * 1-5}
+    BATCH_MAX_SCHEDULE_DELAY_SECONDS: ${BATCH_MAX_SCHEDULE_DELAY_SECONDS:-300}
+  volumes:
+    - stock-data:/opt/stock-data
+    - batch-state:/var/lib/stock-batch
+    - ${MODEL_DIR:?set MODEL_DIR in .env.server}:/opt/stocksearcher/models:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    prefect-server:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?set POSTGRES_IMAGE in .env.server}
+    environment:
+      # Retained for compatibility with an existing cluster; no Airflow service uses this DB.
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.server}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.server}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.server}
+      STOCK_DB_USER: ${STOCK_DB_USER:?set STOCK_DB_USER in .env.server}
+      STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env.server}
+      STOCK_DB_NAME: ${STOCK_DB_NAME:-stock}
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  prefect-server:
+    image: ${BATCH_IMAGE:?set BATCH_IMAGE in .env.server}
+    command: prefect server start --host 0.0.0.0
+    environment:
+      PREFECT_HOME: /root/.prefect
+    volumes:
+      - prefect-state:/root/.prefect
+    ports:
+      - "${PREFECT_UI_PORT:-4200}:4200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4200/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+  prefect-runner:
+    <<: *batch-common
+    command: python -m batch.prefect_flows
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  viewer:
+    image: ${VIEWER_IMAGE:?set VIEWER_IMAGE in .env.server}
+    environment:
+      STOCK_DB_HOST: postgres
+      STOCK_DB_PORT: "5432"
+      STOCK_DB_NAME: ${STOCK_DB_NAME:-stock}
+      STOCK_DB_USER: ${STOCK_DB_USER:?set STOCK_DB_USER in .env.server}
+      STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env.server}
+    ports:
+      - "${VIEWER_PORT:-8081}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  batch-state:
+  prefect-state:
+  stock-data:
+  postgres-db-volume:

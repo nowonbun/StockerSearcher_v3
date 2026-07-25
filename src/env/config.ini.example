@@ -1,0 +1,12 @@
+[database]
+host = 127.0.0.1
+port = 5432
+user = stock_app
+password = change-me
+database = stock
+
+[default]
+output_dir = ./data
+start_date = 2023-01-01
+end_date = 2099-12-31
+period = 3

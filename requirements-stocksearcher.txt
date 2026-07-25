@@ -1,0 +1,16 @@
+# Dependencies required by the batch runner and the dataset collectors.
+prefect>=3,<4
+psycopg[binary]
+pandas
+requests
+PyYAML
+selenium
+webdriver-manager
+finance-datareader==0.9.202
+yahoo_finance_api2
+numpy<2
+xlrd>=2.0.1
+openpyxl
+lxml
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
