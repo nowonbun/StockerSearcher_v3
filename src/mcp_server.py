@@ -10,6 +10,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.routing import Mount
 import uvicorn
@@ -28,6 +29,17 @@ def _market(value: str) -> str:
 def _table(prefix: str, market: str) -> str:
     """Return an identifier selected only from fixed application table names."""
     return f"{prefix}_{_market(market).lower()}"
+
+
+def _allowed_mcp_hosts() -> list[str]:
+    """Return the configured public hosts plus local hosts for the active port."""
+    port = os.getenv("MCP_PORT", "8000")
+    configured = [
+        host.strip()
+        for host in os.getenv("MCP_ALLOWED_HOSTS", "").split(",")
+        if host.strip()
+    ]
+    return list(dict.fromkeys([*configured, f"127.0.0.1:{port}", f"localhost:{port}"]))
 
 
 def _db_config() -> dict[str, Any]:
@@ -78,7 +90,14 @@ def _stock_data(market: str, code: str, limit: int, start_date: str | None, end_
     return _rows(query, tuple(params))
 
 
-mcp = FastMCP("stocksearcher-postgres-mcp", streamable_http_path="/")
+mcp = FastMCP(
+    "stocksearcher-postgres-mcp",
+    streamable_http_path="/",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=_allowed_mcp_hosts(),
+    ),
+)
 
 
 @mcp.tool()
