@@ -6,7 +6,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import Callable, List
 
 # Allow this file to run directly from ``src/create_model`` by exposing the
 # project ``src`` directory, which contains the ``function`` package.
@@ -43,6 +43,7 @@ V2_FEATURE_COLS = [
     "ha_ret_1d",
     "ha_body_ratio",
 ]
+sample_eligibility: Callable[[np.ndarray, int], bool] | None = None
 
 
 def compute_v2_features(raw: np.ndarray) -> np.ndarray:
@@ -143,6 +144,8 @@ class WindowIterableDatasetV2(IterableDataset):
 
                     for i in range(max_start):
                         end_idx = i + self.seq_len - 1
+                        if sample_eligibility is not None and not sample_eligibility(raw, end_idx):
+                            continue
                         label_date = pd.Timestamp(dates[end_idx])
                         if self.split == "train" and label_date > self.cutoff_date:
                             continue

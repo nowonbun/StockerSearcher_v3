@@ -32,6 +32,7 @@ class PredictionSpec:
     default_min_prob: float | None = None
     default_require_ma20_above_ma60: bool = False
     default_require_above_ichimoku_cloud: bool = False
+    model_mode: str | None = None
 
 
 ICHIMOKU_CONVERSION_PERIOD = 9
@@ -178,7 +179,8 @@ def run_prediction(spec: PredictionSpec, weekly: bool = False) -> None:
 
     model = base_module.StockTransformer(input_size=len(v2_module.V2_FEATURE_COLS), d_model=args.d_model, nhead=args.nhead, num_encoder_layers=args.num_encoder_layers, dim_feedforward=args.dim_feedforward, dropout=args.dropout)
     checkpoint_loader = importlib.import_module("create_model.model_jp").load_model_checkpoint
-    model.load_state_dict(checkpoint_loader(args.model, v2_module.V2_MODEL_MODE, map_location="cpu"))
+    model_mode = spec.model_mode or getattr(v2_module, "MODEL_MODE", v2_module.V2_MODEL_MODE)
+    model.load_state_dict(checkpoint_loader(args.model, model_mode, map_location="cpu"))
     model.eval()
 
     results: list[tuple[str, float]] = []
