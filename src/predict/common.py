@@ -14,7 +14,7 @@ import pandas as pd
 import torch
 
 import function.static as static
-import postgre as postgres
+import psycopg as postgres
 
 
 @dataclass(frozen=True)
@@ -29,10 +29,20 @@ class PredictionSpec:
     horizon_days: int
     rise_threshold: float
     top_k: int
+    default_min_prob: float | None = None
+    default_require_ma20_above_ma60: bool = False
+    default_require_above_ichimoku_cloud: bool = False
+
+
+ICHIMOKU_CONVERSION_PERIOD = 9
+ICHIMOKU_BASE_PERIOD = 26
+ICHIMOKU_SPAN_B_PERIOD = 52
+ICHIMOKU_DISPLACEMENT = 26
+ICHIMOKU_HISTORY_DAYS = ICHIMOKU_SPAN_B_PERIOD + ICHIMOKU_DISPLACEMENT
 
 
 def _not_null_clause(columns: Iterable[str], excluded: set[str]) -> str:
-    return " AND ".join(f"{column} IS NOT NULL" for column in columns if column not in excluded)
+    return " AND ".join(f'"{column.lower()}" IS NOT NULL' for column in columns if column not in excluded)
 
 
 def parse_args(spec: PredictionSpec) -> argparse.Namespace:
@@ -51,7 +61,11 @@ def parse_args(spec: PredictionSpec) -> argparse.Namespace:
     parser.add_argument("--dim-feedforward", type=int, default=512)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--top-k", type=int, default=spec.top_k)
-    parser.add_argument("--min-prob", type=float, default=None)
+    parser.add_argument("--min-prob", type=float, default=spec.default_min_prob)
+    parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000)
+    parser.add_argument("--liquidity-days", type=int, default=5)
+    parser.add_argument("--require-ma20-above-ma60", action=argparse.BooleanOptionalAction, default=spec.default_require_ma20_above_ma60)
+    parser.add_argument("--require-above-ichimoku-cloud", action=argparse.BooleanOptionalAction, default=spec.default_require_above_ichimoku_cloud)
     parser.add_argument("--log-every", type=int, default=200)
     parser.add_argument("--save-db", action="store_true")
     parser.add_argument("--run-name", default=None)
@@ -59,21 +73,64 @@ def parse_args(spec: PredictionSpec) -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _fetch_sequence(connection: postgres.connector.Connection, table: str, code: str, seq_len: int, cutoff: str | None, raw_columns: list[str], feature_builder, excluded_columns: set[str]) -> np.ndarray | None:
+def _fetch_raw_history(connection: postgres.Connection, table: str, code: str, history_days: int, cutoff: str | None, raw_columns: list[str], excluded_columns: set[str]) -> np.ndarray | None:
     where = f"code = %s AND {_not_null_clause(raw_columns, excluded_columns)}"
-    params: tuple[object, ...] = (code, seq_len)
+    params: tuple[object, ...] = (code, history_days)
     if cutoff:
         where = f"code = %s AND date <= %s AND {_not_null_clause(raw_columns, excluded_columns)}"
-        params = (code, cutoff, seq_len)
-    query = f"SELECT {', '.join(raw_columns)} FROM {table} WHERE {where} ORDER BY date DESC LIMIT %s"
+        params = (code, cutoff, history_days)
+    selected_columns = ", ".join(f'"{column.lower()}"' for column in raw_columns)
+    query = f"SELECT {selected_columns} FROM {table} WHERE {where} ORDER BY date DESC LIMIT %s"
     with connection.cursor() as cursor:
         cursor.execute(query, params)
         rows = cursor.fetchall()
-    return None if len(rows) < seq_len else feature_builder(np.array(rows[::-1], dtype=np.float32))
+    return None if len(rows) < history_days else np.array(rows[::-1], dtype=np.float32)
+
+
+def _ichimoku_cloud_top(raw: np.ndarray, high_index: int, low_index: int) -> float | None:
+    """Return the cloud top aligned to the last row's date.
+
+    Senkou spans are displaced 26 sessions forward, so today's cloud uses
+    conversion/base/span-B values calculated 26 sessions ago.
+    """
+    if len(raw) < ICHIMOKU_HISTORY_DAYS:
+        return None
+    source_end = len(raw) - ICHIMOKU_DISPLACEMENT
+    highs = raw[:, high_index].astype(np.float64)
+    lows = raw[:, low_index].astype(np.float64)
+
+    def midpoint(period: int) -> float:
+        window_high = highs[source_end - period:source_end]
+        window_low = lows[source_end - period:source_end]
+        return float((window_high.max() + window_low.min()) / 2.0)
+
+    conversion = midpoint(ICHIMOKU_CONVERSION_PERIOD)
+    base = midpoint(ICHIMOKU_BASE_PERIOD)
+    span_a = (conversion + base) / 2.0
+    span_b = midpoint(ICHIMOKU_SPAN_B_PERIOD)
+    return max(span_a, span_b)
+
+
+def _passes_selection_filters(raw: np.ndarray, raw_columns: list[str], args: argparse.Namespace) -> bool:
+    indexes = {column: index for index, column in enumerate(raw_columns)}
+    if args.min_trans_amnt_sum is not None:
+        if args.liquidity_days <= 0 or args.liquidity_days > len(raw):
+            return False
+        recent_trans_amnt = raw[-args.liquidity_days:, indexes["TransAmnt"]].sum()
+        if recent_trans_amnt < args.min_trans_amnt_sum:
+            return False
+    if args.require_ma20_above_ma60:
+        if raw[-1, indexes["20MvAvg"]] <= raw[-1, indexes["60MvAvg"]]:
+            return False
+    if args.require_above_ichimoku_cloud:
+        cloud_top = _ichimoku_cloud_top(raw, indexes["High"], indexes["Low"])
+        if cloud_top is None or raw[-1, indexes["Close"]] <= cloud_top:
+            return False
+    return True
 
 
 def _save_predictions(spec: PredictionSpec, args: argparse.Namespace, rows: list[tuple[str, float]], cutoff: str) -> None:
-    connection = postgres.connector.connect(**(static.db_config_jp if spec.market == "JP" else static.db_config_kr))
+    connection = postgres.connect(**(static.db_config_jp if spec.market == "JP" else static.db_config_kr))
     try:
         with connection.cursor() as cursor:
             cursor.executemany(
@@ -107,7 +164,8 @@ def run_prediction(spec: PredictionSpec, weekly: bool = False) -> None:
     if not codes:
         raise RuntimeError("no codes loaded from database")
 
-    connection = postgres.connector.connect(**database_config)
+    history_days = max(args.seq_len, ICHIMOKU_HISTORY_DAYS if args.require_above_ichimoku_cloud else 0)
+    connection = postgres.connect(**database_config)
     try:
         with connection.cursor() as cursor:
             cursor.execute(f"SELECT MAX(date) FROM {args.table}")
@@ -123,13 +181,14 @@ def run_prediction(spec: PredictionSpec, weekly: bool = False) -> None:
     model.eval()
 
     results: list[tuple[str, float]] = []
-    connection = postgres.connector.connect(**database_config)
+    connection = postgres.connect(**database_config)
     try:
         for index, code in enumerate(codes, start=1):
             if index == 1 or index % max(1, args.log_every) == 0:
                 print(f"[infer-v2] code={code} ({index})")
-            sequence = _fetch_sequence(connection, args.table, code, args.seq_len, cutoff, raw_columns, v2_module.compute_v2_features, excluded_columns)
-            if sequence is not None:
+            raw_history = _fetch_raw_history(connection, args.table, code, history_days, cutoff, raw_columns, excluded_columns)
+            if raw_history is not None and _passes_selection_filters(raw_history, raw_columns, args):
+                sequence = v2_module.compute_v2_features(raw_history)[-args.seq_len:]
                 with torch.no_grad():
                     logit = model(torch.from_numpy(sequence[None, ...])).item()
                     results.append((code, float(torch.sigmoid(torch.tensor(logit)).item())))
