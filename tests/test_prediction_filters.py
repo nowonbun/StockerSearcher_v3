@@ -44,11 +44,13 @@ class PredictionFilterTests(unittest.TestCase):
     def test_cloud_top_is_aligned_to_current_date(self) -> None:
         self.assertEqual(_ichimoku_cloud_top(history(), 1, 2), 100.0)
 
-    def test_all_default_filters_accept_qualified_stock(self) -> None:
+    def test_all_default_filters_accept_stock_passing_both_trend_conditions(self) -> None:
         self.assertTrue(_passes_selection_filters(history(), RAW_COLUMNS, args()))
 
-    def test_filters_reject_below_cloud_bearish_ma_or_illiquidity(self) -> None:
-        self.assertFalse(_passes_selection_filters(history(close=99.0), RAW_COLUMNS, args()))
-        self.assertFalse(_passes_selection_filters(history(ma20=100.0, ma60=110.0), RAW_COLUMNS, args()))
-        self.assertFalse(_passes_selection_filters(history(trans_amnt=100.0), RAW_COLUMNS, args()))
+    def test_default_trend_filter_accepts_either_cloud_or_ma_condition(self) -> None:
+        self.assertTrue(_passes_selection_filters(history(close=99.0), RAW_COLUMNS, args()))
+        self.assertTrue(_passes_selection_filters(history(ma20=100.0, ma60=110.0), RAW_COLUMNS, args()))
 
+    def test_filters_reject_when_both_trend_conditions_fail_or_liquidity_is_insufficient(self) -> None:
+        self.assertFalse(_passes_selection_filters(history(close=99.0, ma20=100.0, ma60=110.0), RAW_COLUMNS, args()))
+        self.assertFalse(_passes_selection_filters(history(trans_amnt=100.0), RAW_COLUMNS, args()))

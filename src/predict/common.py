@@ -119,13 +119,14 @@ def _passes_selection_filters(raw: np.ndarray, raw_columns: list[str], args: arg
         recent_trans_amnt = raw[-args.liquidity_days:, indexes["TransAmnt"]].sum()
         if recent_trans_amnt < args.min_trans_amnt_sum:
             return False
+    trend_passes: list[bool] = []
     if args.require_ma20_above_ma60:
-        if raw[-1, indexes["20MvAvg"]] <= raw[-1, indexes["60MvAvg"]]:
-            return False
+        trend_passes.append(raw[-1, indexes["20MvAvg"]] > raw[-1, indexes["60MvAvg"]])
     if args.require_above_ichimoku_cloud:
         cloud_top = _ichimoku_cloud_top(raw, indexes["High"], indexes["Low"])
-        if cloud_top is None or raw[-1, indexes["Close"]] <= cloud_top:
-            return False
+        trend_passes.append(cloud_top is not None and raw[-1, indexes["Close"]] > cloud_top)
+    if trend_passes and not any(trend_passes):
+        return False
     return True
 
 
