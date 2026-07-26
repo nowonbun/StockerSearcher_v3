@@ -25,6 +25,7 @@ x-batch-common: &batch-common
   volumes:
     - stock-data:/opt/stock-data
     - batch-state:/var/lib/stock-batch
+    - ./data/log:/var/lib/stock-batch/logs
     - ${MODEL_DIR:?set MODEL_DIR in .env.server}:/opt/stocksearcher/models:ro
   depends_on:
     postgres:

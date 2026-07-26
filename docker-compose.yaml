@@ -28,6 +28,7 @@ x-batch-common: &batch-common
     - ./data:/opt/stock-data
     - ./src:/opt/stocksearcher:ro
     - batch-state:/var/lib/stock-batch
+    - ./data/log:/var/lib/stock-batch/logs
   depends_on:
     postgres:
       condition: service_healthy
