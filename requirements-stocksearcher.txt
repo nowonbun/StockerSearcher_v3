@@ -1,6 +1,9 @@
 # Dependencies required by the batch runner and the dataset collectors.
 prefect>=3,<4
 psycopg[binary]
+mcp>=1,<2
+starlette
+uvicorn
 pandas
 requests
 PyYAML

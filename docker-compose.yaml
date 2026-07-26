@@ -89,6 +89,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  mcp:
+    build:
+      context: .
+    image: ${BATCH_IMAGE:-stocksearcher-batch:local}
+    command: python -m mcp_server
+    environment:
+      STOCK_DB_HOST: postgres
+      STOCK_DB_PORT: "5432"
+      STOCK_DB_NAME: ${STOCK_DB_NAME:-stock}
+      STOCK_DB_USER: ${STOCK_DB_USER:-stock_app}
+      STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8000"
+    ports:
+      - "${MCP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   viewer:
     build:
       context: ./src/viewer

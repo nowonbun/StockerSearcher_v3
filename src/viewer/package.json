@@ -11,6 +11,8 @@
     "nuxt": "^3.17.0"
   },
   "dependencies": {
+    "ag-grid-community": "36.0.2",
+    "ag-grid-vue3": "36.0.2",
     "pg": "^8.13.3"
   }
 }

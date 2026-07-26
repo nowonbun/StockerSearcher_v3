@@ -24,6 +24,12 @@ docker compose up -d
 
 Prefect UI는 `http://localhost:4200`에서 엽니다. `prefect-runner`가 만든 `stocksearcher` 배포를 실행하면 시장과 모드를 입력하여 수동 실행할 수 있습니다. 다른 장비의 브라우저로 접속하는 경우 `.env`의 `PREFECT_SERVER_UI_API_URL`을 브라우저가 실제로 사용하는 `http://<host-ip-or-hostname>:4200/api` 주소로 설정해야 합니다.
 
+## PostgreSQL MCP 서버
+
+`mcp` 서비스는 PostgreSQL `stock` DB를 읽기 전용으로 조회하는 Streamable HTTP MCP 서버입니다. Docker Compose를 기동하면 호스트의 `8000` 포트에서 `/mcp` 경로를 제공합니다. `.env`의 `MCP_PORT`로 호스트 포트만 변경할 수 있습니다.
+
+제공 도구는 `list_stocks`, `stock_data`, `stock_data_week`, `list_predict_dates`, `predict_rows`입니다. 모든 도구는 `KR` 또는 `JP` 시장 코드만 받으며, 데이터 변경 도구는 제공하지 않습니다.
+
 ## 수동 실행
 
 Prefect UI의 `Run` 화면에서 Parameter는 선택 목록으로 표시됩니다.
