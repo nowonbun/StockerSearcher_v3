@@ -98,8 +98,8 @@ def _save_predictions(spec: PredictionSpec, args: argparse.Namespace, rows: list
 
 def run_prediction(spec: PredictionSpec, weekly: bool = False) -> None:
     args = parse_args(spec)
-    base_module = importlib.import_module(spec.base_module)
-    v2_module = importlib.import_module(spec.v2_module)
+    base_module = importlib.import_module(f"create_model.{spec.base_module}")
+    v2_module = importlib.import_module(f"create_model.{spec.v2_module}")
     database_config = static.db_config_jp if spec.market == "JP" else static.db_config_kr
     raw_columns = list(base_module._RAW_COLS)
     excluded_columns = {"LowerBand60_3"} if weekly else set()
@@ -118,7 +118,7 @@ def run_prediction(spec: PredictionSpec, weekly: bool = False) -> None:
     cutoff = min(requested_cutoff, row[0].isoformat()) if row and row[0] else requested_cutoff
 
     model = base_module.StockTransformer(input_size=len(v2_module.V2_FEATURE_COLS), d_model=args.d_model, nhead=args.nhead, num_encoder_layers=args.num_encoder_layers, dim_feedforward=args.dim_feedforward, dropout=args.dropout)
-    checkpoint_loader = importlib.import_module("model_jp").load_model_checkpoint
+    checkpoint_loader = importlib.import_module("create_model.model_jp").load_model_checkpoint
     model.load_state_dict(checkpoint_loader(args.model, v2_module.V2_MODEL_MODE, map_location="cpu"))
     model.eval()
 
