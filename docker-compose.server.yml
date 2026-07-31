@@ -58,6 +58,14 @@ services:
     command: prefect server start --host 0.0.0.0
     environment:
       PREFECT_HOME: /root/.prefect
+      # Reuse the existing PostgreSQL bootstrap database for Prefect metadata.
+      # SQLite cannot safely serve the runner's concurrent requests.
+      PREFECT_SERVER_DATABASE_DRIVER: postgresql+asyncpg
+      PREFECT_SERVER_DATABASE_HOST: postgres
+      PREFECT_SERVER_DATABASE_PORT: "5432"
+      PREFECT_SERVER_DATABASE_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.server}
+      PREFECT_SERVER_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.server}
+      PREFECT_SERVER_DATABASE_NAME: ${POSTGRES_DB:?set POSTGRES_DB in .env.server}
       # Must be reachable from the browser opening the Prefect UI.
       PREFECT_SERVER_UI_API_URL: ${PREFECT_SERVER_UI_API_URL:?set PREFECT_SERVER_UI_API_URL in .env.server}
     volumes:

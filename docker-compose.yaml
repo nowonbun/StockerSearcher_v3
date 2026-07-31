@@ -66,6 +66,14 @@ services:
     command: prefect server start --host 0.0.0.0
     environment:
       PREFECT_HOME: /root/.prefect
+      # Use the existing PostgreSQL bootstrap database for Prefect metadata;
+      # SQLite cannot safely serve the runner's concurrent requests.
+      PREFECT_SERVER_DATABASE_DRIVER: postgresql+asyncpg
+      PREFECT_SERVER_DATABASE_HOST: postgres
+      PREFECT_SERVER_DATABASE_PORT: "5432"
+      PREFECT_SERVER_DATABASE_USER: ${POSTGRES_USER:-airflow}
+      PREFECT_SERVER_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PREFECT_SERVER_DATABASE_NAME: ${POSTGRES_DB:-airflow}
       # Browser-facing API address. Batch containers continue to use internal Docker DNS.
       PREFECT_SERVER_UI_API_URL: ${PREFECT_SERVER_UI_API_URL:-http://localhost:4200/api}
     volumes:

@@ -3,9 +3,12 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 
-def previous_month_end(today: date | None = None) -> str:
+def training_cutoff_date(today: date | None = None) -> str:
     current = today or date.today()
-    return (current.replace(day=1) - timedelta(days=1)).isoformat()
+    month_start = current.replace(day=1)
+    for _ in range(2):
+        month_start = (month_start - timedelta(days=1)).replace(day=1)
+    return (month_start - timedelta(days=1)).isoformat()
 
 
 def daily_split_source(market: str) -> str:

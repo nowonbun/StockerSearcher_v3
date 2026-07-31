@@ -13,6 +13,7 @@ from predict.common import (  # noqa: E402
     _ichimoku_cloud_top,
     _passes_selection_filters,
 )
+from create_model.split_source import training_cutoff_date  # noqa: E402
 
 
 RAW_COLUMNS = ["Open", "High", "Low", "Close", "Volume", "TransAmnt", "5MvAvg", "20MvAvg", "50MvAvg", "60MvAvg"]
@@ -41,6 +42,10 @@ def history(close: float = 130.0, ma20: float = 120.0, ma60: float = 110.0, tran
 
 
 class PredictionFilterTests(unittest.TestCase):
+    def test_training_cutoff_date_is_three_months_before_month_end(self) -> None:
+        from datetime import date
+        self.assertEqual(training_cutoff_date(date(2026, 7, 31)), "2026-04-30")
+        self.assertEqual(training_cutoff_date(date(2026, 2, 1)), "2025-11-30")
     def test_cloud_top_is_aligned_to_current_date(self) -> None:
         self.assertEqual(_ichimoku_cloud_top(history(), 1, 2), 100.0)
 

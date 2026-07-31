@@ -4,8 +4,9 @@ data/
 plugins/
 src/env/config.ini
 src/models/*.pt
+src/models/
 src/create_model/log/
 __pycache__/
 *.py[cod]
 postgressql/
-src/viewer/node_modules
+src/viewer/node_modules/
