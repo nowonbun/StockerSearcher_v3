@@ -50,10 +50,27 @@ class SplitDatasetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported market: US"):
             split_dataset._tables("US", False)
 
-    def test_recent_collection_window_limits_source_requests_to_the_latest_thirty_days(self) -> None:
+    def test_recent_collection_window_uses_the_default_one_calendar_month(self) -> None:
         self.assertEqual(
             split_dataset.recent_collection_window(date(2026, 1, 31)),
-            ("2026-01-01", "2026-01-31"),
+            ("2025-12-31", "2026-01-31"),
+        )
+
+    def test_recent_collection_window_uses_configurable_calendar_months(self) -> None:
+        self.assertEqual(
+            split_dataset.recent_collection_window(date(2026, 3, 31), months=2),
+            ("2026-01-31", "2026-03-31"),
+        )
+
+    def test_indicator_payload_keeps_only_the_latest_collection_month(self) -> None:
+        rows = [
+            (pd.Timestamp("2026-01-26"), *range(1, 15)),
+            (pd.Timestamp("2026-02-02"), *range(1, 15)),
+            (pd.Timestamp("2026-02-27"), *range(1, 15)),
+        ]
+        self.assertEqual(
+            split_dataset._indicator_rows_for_update(rows, date(2026, 2, 27), months=1),
+            rows[1:],
         )
 
     def test_kr_rows_excludes_zero_volume_and_aggregates_weekly(self) -> None:
@@ -230,7 +247,7 @@ class SplitDatasetTests(unittest.TestCase):
             split_dataset.calculate_indicators("KR", weekly=False)
 
         self.assertEqual(connect.call_count, 2)
-        self.assertEqual(indicator_rows.call_count, 1)
+        indicator_rows.assert_not_called()
         self.assertIn("FROM stock_ohlcv_kr WHERE code = %s", rows_cursor.execute.call_args.args[0])
         rows_cursor.executemany.assert_not_called()
 
@@ -261,7 +278,7 @@ class SplitDatasetTests(unittest.TestCase):
         codes_connection = MagicMock()
         codes_connection.__enter__.return_value.cursor.return_value.__enter__.return_value = codes_cursor
         rows_cursor = MagicMock()
-        rows_cursor.fetchall.return_value = []
+        rows_cursor.fetchall.return_value = [(date(2026, 1, 5), 1, 2, 0, 1, 9)]
         rows_connection = MagicMock()
         rows_connection.__enter__.return_value.cursor.return_value.__enter__.return_value = rows_cursor
         insert_cursor = MagicMock()
@@ -279,6 +296,37 @@ class SplitDatasetTests(unittest.TestCase):
         self.assertEqual(payload, [("005930", *indicator_row)])
         self.assertEqual(len(payload[0]), 16)
         self.assertEqual(query.split("VALUES", 1)[1].split("now()", 1)[0].count("%s"), 16)
+        self.assertIn("LIMIT %s", rows_cursor.execute.call_args.args[0])
+        self.assertEqual(rows_cursor.execute.call_args.args[1], ("005930", split_dataset.static.indicator_history_rows))
+
+    def test_calculate_indicators_upserts_only_the_latest_configured_month(self) -> None:
+        codes_cursor = MagicMock()
+        codes_cursor.fetchall.return_value = [("005930",)]
+        codes_connection = MagicMock()
+        codes_connection.__enter__.return_value.cursor.return_value.__enter__.return_value = codes_cursor
+        rows_cursor = MagicMock()
+        rows_cursor.fetchall.return_value = [(date(2026, 2, 27), 1, 2, 0, 1, 9)]
+        rows_connection = MagicMock()
+        rows_connection.__enter__.return_value.cursor.return_value.__enter__.return_value = rows_cursor
+        insert_cursor = MagicMock()
+        insert_connection = MagicMock()
+        insert_connection.__enter__.return_value.cursor.return_value.__enter__.return_value = insert_cursor
+        rows = [
+            (pd.Timestamp("2026-01-26"), *range(1, 15)),
+            (pd.Timestamp("2026-02-02"), *range(1, 15)),
+            (pd.Timestamp("2026-02-27"), *range(1, 15)),
+        ]
+
+        with (
+            patch.object(split_dataset.psycopg, "connect", side_effect=[codes_connection, rows_connection, insert_connection]),
+            patch.object(split_dataset, "_indicator_rows", return_value=rows),
+            patch.object(split_dataset.static, "split_collection_months", 1),
+            patch.object(split_dataset.static, "indicator_history_rows", 300),
+        ):
+            split_dataset.calculate_indicators("KR", weekly=False)
+
+        _, payload = insert_cursor.executemany.call_args.args
+        self.assertEqual(payload, [("005930", *row) for row in rows[1:]])
 
     def test_collect_kr_refreshes_codes_before_daily_then_weekly_upserts(self) -> None:
         events: list[tuple[str, object]] = []
@@ -341,11 +389,12 @@ class SplitDatasetTests(unittest.TestCase):
             patch.object(split_dataset.dataset_jp, "fetch_stock_raw", return_value={"raw": "value"}) as fetch,
             patch.object(split_dataset, "_jp_rows", return_value=[("2026-01-05", 1, 2, 0, 1, 9)]),
             patch.object(split_dataset, "_upsert_ohlcv", upsert),
+            patch.object(split_dataset.static, "split_collection_months", 2),
         ):
             split_dataset.collect_jp(weekly=False)
 
         self.assertEqual(fetch.call_count, 1)
-        self.assertEqual(fetch.call_args.args[2:4], (split_dataset.stock_lib.PERIOD_TYPE_MONTH, 1))
+        self.assertEqual(fetch.call_args.args[2:4], (split_dataset.stock_lib.PERIOD_TYPE_MONTH, 2))
         self.assertEqual(upsert.call_count, 1)
         self.assertEqual(upsert.call_args.args[:2], ("JP", False))
         driver.quit.assert_called_once_with()

@@ -35,3 +35,10 @@ db_config_kr = db_config.copy()
 start_date = setting("default", "start_date", "STOCK_START_DATE", "2023-01-01")
 end_date = setting("default", "end_date", "STOCK_END_DATE", "2099-12-31")
 period = int(setting("default", "period", "STOCK_PERIOD", "3"))
+split_collection_months = int(setting("default", "split_collection_months", "STOCK_SPLIT_COLLECTION_MONTHS", "1"))
+indicator_history_rows = int(setting("default", "indicator_history_rows", "INDICATOR_HISTORY_ROWS", "300"))
+
+if split_collection_months <= 0:
+    raise ValueError("split_collection_months must be greater than zero")
+if indicator_history_rows < 240:
+    raise ValueError("indicator_history_rows must be at least 240")

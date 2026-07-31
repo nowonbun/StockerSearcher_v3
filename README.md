@@ -66,6 +66,20 @@ Prefect UI 실행과 같은 시장·같은 시간에 겹치면 Linux `flock`이 
 
 `BATCH_SCHEDULE_MODE`을 `full`로 설정하면 수집 후 일간·주간 예측까지 순차 실행합니다. 스케줄러는 Prefect 하나만 사용하며, host cron은 등록하지 마세요. Prefect UI에서 `Flows` → `stocksearcher-batch` → `stocksearcher`를 열어 `Schedules`와 `Upcoming`의 cron 및 다음 실행 시간을 확인하거나 수정할 수 있습니다. JP/KR 배치는 동시에 시작되지 않도록 배포 실행 수를 1개로 제한합니다. 컨테이너 또는 Prefect 재기동 후 300초보다 늦어진 예약 실행은 `skipped-stale`로 기록하고 시작하지 않습니다. 이 기준은 `.env`의 `BATCH_MAX_SCHEDULE_DELAY_SECONDS`로 변경할 수 있습니다.
 
+### 배치 러너 기동
+
+`prefect-runner`만 기동하거나 다시 만들 때는 다음 명령을 사용합니다. 이 서비스는 `prefect-server`가 `healthy`가 된 뒤에 시작됩니다.
+
+```bash
+docker compose up -d prefect-runner
+```
+
+Prefect 서버 설정 또는 이미지가 바뀐 경우에는 서버와 배치 러너를 함께 다시 만듭니다.
+
+```bash
+docker compose up -d --build --force-recreate prefect-server prefect-runner
+```
+
 ## 이력과 로그
 
 `batch-state` Docker 볼륨에 다음이 저장됩니다.
@@ -79,19 +93,11 @@ SQLite는 WAL 모드와 10초 busy timeout을 사용합니다.
 | 저장소 | 컨테이너 경로 | 호스트 경로 | 저장 내용 |
 | --- | --- | --- | --- |
 | `batch-state` Docker 볼륨 | `/var/lib/stock-batch` | Docker 관리 경로 | 자체 실행 이력 SQLite(`history.sqlite3`), 하위 작업 전체 로그, 시장별 잠금 파일 |
-| Prefect 메타데이터 | `/root/.prefect` | `./data/metadata` | Prefect SQLite(`./data/metadata/prefect.db`): Deployment, 스케줄, Flow Run, Prefect UI 로그 메타데이터 |
+| Prefect 메타데이터 | PostgreSQL `airflow` DB | Docker `postgres` 서비스 | Deployment, 스케줄, Flow Run, Prefect UI 로그 메타데이터 |
 
-Prefect UI에는 작업 시작·종료·취소·시간 초과 같은 요약 이벤트만 기록합니다. dataset/predict의 행 단위 상세 출력은 Prefect SQLite에 중복 저장하지 않고 `batch-state`의 실행별 로그 파일에서 확인합니다.
+Prefect 서버는 시작 시 PostgreSQL에 필요한 메타데이터 테이블을 생성·업그레이드합니다. Prefect UI에는 작업 시작·종료·취소·시간 초과 같은 요약 이벤트만 기록합니다. dataset/predict의 행 단위 상세 출력은 PostgreSQL에 중복 저장하지 않고 `batch-state`의 실행별 로그 파일에서 확인합니다.
 
-기존 `prefect-state` Docker 볼륨에 저장된 Deployment와 실행 이력을 유지하려면, Compose를 재기동하기 전에 현재 서버에서 아래와 같이 복사합니다. 이 과정은 기존 볼륨을 삭제하지 않습니다.
-
-```bash
-mkdir -p ./data/metadata
-docker run --rm \
-  -v stockersearcher_v3_prefect-state:/src:ro \
-  -v "$(pwd)/data/metadata:/dst" \
-  busybox cp -a /src/. /dst/
-```
+기존 `./data/metadata/prefect.db`의 SQLite 이력은 PostgreSQL로 자동 이전되지 않습니다. 필요하면 전환 전에 해당 파일을 별도로 백업합니다.
 각 수집·예측 하위 작업의 기본 시간 제한은 7,200초이며, `BATCH_TASK_TIMEOUT_SECONDS`로 변경할 수 있습니다.
 
 ## 롤백
