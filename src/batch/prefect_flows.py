@@ -11,7 +11,7 @@ from batch.runner import run_batch
 
 
 Market = Literal["JP", "KR"]
-Mode = Literal["collect", "predict", "full", "daily", "weekly"]
+Mode = Literal["collect", "predict", "full", "daily", "weekly", "base", "indicators", "split"]
 TriggerSource = Literal["prefect-ui", "prefect-schedule"]
 
 

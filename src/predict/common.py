@@ -32,6 +32,8 @@ class PredictionSpec:
     default_min_prob: float | None = None
     default_require_ma20_above_ma60: bool = False
     default_require_above_ichimoku_cloud: bool = False
+    default_require_upper_band_breakout: bool = False
+    default_max_extension_ratio: float | None = None
     model_mode: str | None = None
 
 
@@ -67,6 +69,8 @@ def parse_args(spec: PredictionSpec) -> argparse.Namespace:
     parser.add_argument("--liquidity-days", type=int, default=5)
     parser.add_argument("--require-ma20-above-ma60", action=argparse.BooleanOptionalAction, default=spec.default_require_ma20_above_ma60)
     parser.add_argument("--require-above-ichimoku-cloud", action=argparse.BooleanOptionalAction, default=spec.default_require_above_ichimoku_cloud)
+    parser.add_argument("--require-upper-band-breakout", action=argparse.BooleanOptionalAction, default=spec.default_require_upper_band_breakout)
+    parser.add_argument("--max-extension-ratio", type=float, default=spec.default_max_extension_ratio)
     parser.add_argument("--log-every", type=int, default=200)
     parser.add_argument("--save-db", action="store_true")
     parser.add_argument("--run-name", default=None)
@@ -128,6 +132,17 @@ def _passes_selection_filters(raw: np.ndarray, raw_columns: list[str], args: arg
         trend_passes.append(cloud_top is not None and raw[-1, indexes["Close"]] > cloud_top)
     if trend_passes and not any(trend_passes):
         return False
+    if getattr(args, "require_upper_band_breakout", False):
+        upper = raw[-1, indexes["UpperBand60_1"]]
+        close = raw[-1, indexes["Close"]]
+        if close <= upper:
+            return False
+        if args.max_extension_ratio is not None and close > upper * (1.0 + args.max_extension_ratio):
+            return False
+    if getattr(args, "require_above_ichimoku_cloud", False) and getattr(args, "max_extension_ratio", None) is not None:
+        cloud_top = _ichimoku_cloud_top(raw, indexes["High"], indexes["Low"])
+        if cloud_top is not None and raw[-1, indexes["Close"]] > cloud_top * (1.0 + args.max_extension_ratio):
+            return False
     return True
 
 

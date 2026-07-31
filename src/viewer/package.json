@@ -4,11 +4,13 @@
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
-    "preview": "nuxt preview"
+    "preview": "nuxt preview",
+    "test": "vitest run --pool=threads --maxWorkers=1 --no-file-parallelism"
   },
   "devDependencies": {
     "@types/pg": "^8.11.10",
-    "nuxt": "^3.17.0"
+    "nuxt": "^3.17.0",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "ag-grid-community": "36.0.2",

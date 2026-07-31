@@ -4,6 +4,8 @@ from pathlib import Path
 
 from . import model_jp_v2 as base
 from .model_v3_features import V3_FEATURE_COLS, compute_v3_features as build_v3_features, eligible_v3
+from .split_source import daily_split_source, previous_month_end
+import function.static as static
 
 V3_MODEL_MODE = "v3_trend_filtered_upside_probability_jp"
 MODEL_MODE = V3_MODEL_MODE
@@ -21,6 +23,10 @@ def main() -> None:
     base.sample_eligibility = lambda raw, end: eligible_v3(raw, end, base._RAW_COLS)
     def parse_args_v3():
         args = original_parse_args()
+        if args.table == "STOCK_DATA_JP":
+            args.table = daily_split_source("JP")
+        if args.end_date == static.end_date:
+            args.end_date = previous_month_end()
         if args.model_out.endswith("model_jp_v2.pt"):
             args.model_out = str(Path(__file__).resolve().parents[1] / "models" / "model_jp_v3.pt")
         return args

@@ -87,6 +87,88 @@ CREATE TABLE stock_data_week_jp (
 );
 CREATE INDEX idx_stock_data_week_jp_date ON stock_data_week_jp (date);
 
+-- Split dataset pipeline: raw OHLCV is stored separately from technical indicators.
+CREATE TABLE stock_ohlcv_kr (
+    code VARCHAR(12) NOT NULL REFERENCES stock_list_kr (code),
+    date DATE NOT NULL,
+    open BIGINT, high BIGINT, low BIGINT, close BIGINT, volume BIGINT,
+    create_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (code, date)
+);
+CREATE TABLE stock_ohlcv_week_kr (
+    code VARCHAR(12) NOT NULL REFERENCES stock_list_kr (code), date DATE NOT NULL,
+    open BIGINT, high BIGINT, low BIGINT, close BIGINT, volume BIGINT,
+    create_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, update_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (code, date)
+);
+CREATE TABLE stock_ohlcv_jp (
+    code VARCHAR(12) NOT NULL REFERENCES stock_list_jp (code),
+    date DATE NOT NULL,
+    open BIGINT, high BIGINT, low BIGINT, close BIGINT, volume BIGINT,
+    create_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (code, date)
+);
+CREATE TABLE stock_ohlcv_week_jp (
+    code VARCHAR(12) NOT NULL REFERENCES stock_list_jp (code), date DATE NOT NULL,
+    open BIGINT, high BIGINT, low BIGINT, close BIGINT, volume BIGINT,
+    create_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, update_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (code, date)
+);
+
+CREATE TABLE stock_indicator_kr (
+    code VARCHAR(12) NOT NULL REFERENCES stock_list_kr (code),
+    date DATE NOT NULL,
+    "5mvavg" BIGINT, "20mvavg" BIGINT, "50mvavg" BIGINT,
+    "60mvavg" BIGINT, "120mvavg" BIGINT, "240mvavg" BIGINT,
+    bollinger_upper_60_1 BIGINT, bollinger_lower_60_1 BIGINT,
+    bollinger_lower_60_3 BIGINT,
+    ichimoku_conversion BIGINT, ichimoku_base BIGINT,
+    ichimoku_span_a BIGINT, ichimoku_span_b BIGINT, ichimoku_lagging BIGINT,
+    create_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (code, date)
+);
+CREATE TABLE stock_indicator_week_kr (
+    code VARCHAR(12) NOT NULL REFERENCES stock_list_kr (code), date DATE NOT NULL,
+    "5mvavg" BIGINT, "20mvavg" BIGINT, "50mvavg" BIGINT, "60mvavg" BIGINT, "120mvavg" BIGINT, "240mvavg" BIGINT,
+    bollinger_upper_60_1 BIGINT, bollinger_lower_60_1 BIGINT, bollinger_lower_60_3 BIGINT,
+    ichimoku_conversion BIGINT, ichimoku_base BIGINT, ichimoku_span_a BIGINT, ichimoku_span_b BIGINT, ichimoku_lagging BIGINT,
+    create_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, update_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (code, date)
+);
+CREATE TABLE stock_indicator_jp (
+    code VARCHAR(12) NOT NULL REFERENCES stock_list_jp (code),
+    date DATE NOT NULL,
+    "5mvavg" BIGINT, "20mvavg" BIGINT, "50mvavg" BIGINT,
+    "60mvavg" BIGINT, "120mvavg" BIGINT, "240mvavg" BIGINT,
+    bollinger_upper_60_1 BIGINT, bollinger_lower_60_1 BIGINT,
+    bollinger_lower_60_3 BIGINT,
+    ichimoku_conversion BIGINT, ichimoku_base BIGINT,
+    ichimoku_span_a BIGINT, ichimoku_span_b BIGINT, ichimoku_lagging BIGINT,
+    create_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (code, date)
+);
+CREATE TABLE stock_indicator_week_jp (
+    code VARCHAR(12) NOT NULL REFERENCES stock_list_jp (code), date DATE NOT NULL,
+    "5mvavg" BIGINT, "20mvavg" BIGINT, "50mvavg" BIGINT, "60mvavg" BIGINT, "120mvavg" BIGINT, "240mvavg" BIGINT,
+    bollinger_upper_60_1 BIGINT, bollinger_lower_60_1 BIGINT, bollinger_lower_60_3 BIGINT,
+    ichimoku_conversion BIGINT, ichimoku_base BIGINT, ichimoku_span_a BIGINT, ichimoku_span_b BIGINT, ichimoku_lagging BIGINT,
+    create_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, update_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (code, date)
+);
+
+CREATE INDEX idx_stock_ohlcv_kr_date ON stock_ohlcv_kr (date);
+CREATE INDEX idx_stock_ohlcv_week_kr_date ON stock_ohlcv_week_kr (date);
+CREATE INDEX idx_stock_ohlcv_jp_date ON stock_ohlcv_jp (date);
+CREATE INDEX idx_stock_ohlcv_week_jp_date ON stock_ohlcv_week_jp (date);
+CREATE INDEX idx_stock_indicator_kr_date ON stock_indicator_kr (date);
+CREATE INDEX idx_stock_indicator_week_kr_date ON stock_indicator_week_kr (date);
+CREATE INDEX idx_stock_indicator_jp_date ON stock_indicator_jp (date);
+CREATE INDEX idx_stock_indicator_week_jp_date ON stock_indicator_week_jp (date);
+
 CREATE TABLE stock_predict_jp (
     data_cutoff DATE NOT NULL,
     code VARCHAR(12) NOT NULL REFERENCES stock_list_jp (code),

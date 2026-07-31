@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 MARKETS = ("JP", "KR")
-MODES = ("collect", "predict", "full", "daily", "weekly")
+MODES = ("collect", "predict", "full", "daily", "weekly", "base", "indicators", "split")
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,8 @@ def command_for(market: str, task: str) -> list[str]:
 
     commands = {
         "collect": [sys.executable, f"dataset/dataset_{market.lower()}.py"],
+        "base": [sys.executable, f"dataset/base_dataset_{market.lower()}.py"],
+        "indicators": [sys.executable, f"dataset/indicator_dataset_{market.lower()}.py"],
         "daily": [sys.executable, f"predict/predict_{market.lower()}_v2.py", "--save-db"],
         "weekly": [sys.executable, f"predict/predict_week_{market.lower()}_v2.py", "--save-db"],
     }
@@ -52,6 +54,12 @@ def command_for(market: str, task: str) -> list[str]:
 def tasks_for(mode: str) -> tuple[str, ...]:
     if mode == "collect":
         return ("collect",)
+    if mode == "base":
+        return ("base",)
+    if mode == "indicators":
+        return ("indicators",)
+    if mode == "split":
+        return ("base", "indicators")
     if mode == "predict":
         return ("daily", "weekly")
     if mode == "full":

@@ -8,3 +8,4 @@ src/create_model/log/
 __pycache__/
 *.py[cod]
 postgressql/
+src/viewer/node_modules
