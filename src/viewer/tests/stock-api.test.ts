@@ -69,14 +69,21 @@ describe('handleStockApi', () => {
     expect(mocks.queryRows).not.toHaveBeenCalled()
   })
 
-  it('lists scanner dates from every row in the split view', async () => {
+  it('lists scanner dates from the market reference code for a fast indexed lookup', async () => {
     mocks.getQuery.mockReturnValue({ market: 'JP' })
     mocks.queryRows.mockResolvedValue([{ date: '2026-07-31' }])
 
     await expect(handleStockApi({} as never, 'scanner-dates')).resolves.toEqual({ dates: ['2026-07-31'] })
     expect(mocks.queryRows).toHaveBeenCalledWith(
-      expect.stringContaining('SELECT DISTINCT date FROM stock_data_split_jp'),
-      [120],
+      expect.stringContaining('SELECT date FROM stock_data_split_jp WHERE code = $1'),
+      ['7203', 120],
+    )
+
+    mocks.getQuery.mockReturnValue({ market: 'KR' })
+    await handleStockApi({} as never, 'scanner-dates')
+    expect(mocks.queryRows).toHaveBeenLastCalledWith(
+      expect.stringContaining('SELECT date FROM stock_data_split_kr WHERE code = $1'),
+      ['005930', 120],
     )
   })
 

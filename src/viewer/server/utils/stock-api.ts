@@ -9,6 +9,11 @@ const tables: Record<Market, Tables> = {
   KR: { predict: 'stock_predict_kr', data: 'stock_data_split_kr', list: 'stock_list_kr', weeklyPredict: 'stock_predict_week_kr', weeklyData: 'stock_data_split_week_kr' },
 }
 
+const scannerDateReferenceCode: Record<Market, string> = {
+  JP: '7203',
+  KR: '005930',
+}
+
 function marketOf(value: unknown): Market {
   const market = String(value || 'KR').toUpperCase()
   if (market !== 'JP' && market !== 'KR') throw createError({ statusCode: 400, statusMessage: 'market must be JP or KR' })
@@ -62,7 +67,7 @@ async function predictions(market: Market, asOf: string, weekly: boolean) {
 
 async function scannerDates(market: Market, weekly: boolean) {
   const table = weekly ? tables[market].weeklyData : tables[market].data
-  const rows = await queryRows<{ date: unknown }>(`SELECT DISTINCT date FROM ${table} ORDER BY date DESC LIMIT $1`, [120])
+  const rows = await queryRows<{ date: unknown }>(`SELECT date FROM ${table} WHERE code = $1 ORDER BY date DESC LIMIT $2`, [scannerDateReferenceCode[market], 120])
   return { dates: rows.map((row) => dateOnly(row.date)) }
 }
 
