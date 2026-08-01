@@ -66,6 +66,10 @@ class ViewerStaticContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, text)
 
+    def test_viewer_normalizes_the_optional_text_filter_before_trimming(self) -> None:
+        text = (VIEWER_ROOT / "app.vue").read_text(encoding="utf-8")
+        self.assertIn("String(form.query ?? '').trim()", text)
+
     def test_database_utility_requires_password_and_normalizes_date_and_numeric_values(self) -> None:
         text = (UTILS_ROOT / "db.ts").read_text(encoding="utf-8")
 

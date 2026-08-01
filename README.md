@@ -79,6 +79,7 @@ Prefect 서버 설정 또는 이미지가 바뀐 경우에는 서버와 배치 �
 ```bash
 docker compose up -d prefect-server prefect-runner
 docker compose up -d --build --force-recreate prefect-server prefect-runner
+docker compose up -d --build --force-recreate viewer
 ```
 
 ## 이력과 로그

@@ -69,6 +69,17 @@ describe('handleStockApi', () => {
     expect(mocks.queryRows).not.toHaveBeenCalled()
   })
 
+  it('lists scanner dates from every row in the split view', async () => {
+    mocks.getQuery.mockReturnValue({ market: 'JP' })
+    mocks.queryRows.mockResolvedValue([{ date: '2026-07-31' }])
+
+    await expect(handleStockApi({} as never, 'scanner-dates')).resolves.toEqual({ dates: ['2026-07-31'] })
+    expect(mocks.queryRows).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT DISTINCT date FROM stock_data_split_jp'),
+      [120],
+    )
+  })
+
   it('reverses weekly series rows and omits daily-only moving averages', async () => {
     mocks.getQuery.mockReturnValue({ code: '7203', as_of: '2026-07-30' })
     mocks.queryRows.mockResolvedValue([

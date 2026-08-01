@@ -42,7 +42,7 @@ const defaultColDef: ColDef<Row> = { sortable: true, resizable: true, filter: tr
 function createForm() { return { date: '', query: '', openMin: '', openMax: '', closeMin: '', closeMax: '', transAmount: '' } }
 function getForm(key = stateKey.value) { return (forms[key] ||= createForm()) }
 function dateKey(item = panel.value, selectedMarket = market.value) { return `${item.weekly ? 'weekly' : 'daily'}-${selectedMarket}` }
-function numberOrEmpty(value: string) { return value.trim() === '' ? undefined : Number(value) }
+function numberOrEmpty(value: unknown) { const text = String(value ?? '').trim(); return text === '' ? undefined : Number(text) }
 function format(value: Row[string] | number, digits?: number) {
   if (value === null || value === undefined || value === '') return ''
   const numeric = Number(value)
@@ -115,7 +115,7 @@ async function openChart(row: Row) {
 }
 const filteredRows = computed(() => {
   const form = currentForm.value
-  const text = form.query.trim().toLocaleLowerCase()
+  const text = String(form.query ?? '').trim().toLocaleLowerCase()
   const filtered = currentRows.value.filter((row) => {
     if (text && !`${row.code ?? ''} ${row.name ?? ''}`.toLocaleLowerCase().includes(text)) return false
     if (panel.value.kind === 'predict') {

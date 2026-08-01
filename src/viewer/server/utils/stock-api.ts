@@ -62,8 +62,7 @@ async function predictions(market: Market, asOf: string, weekly: boolean) {
 
 async function scannerDates(market: Market, weekly: boolean) {
   const table = weekly ? tables[market].weeklyData : tables[market].data
-  const code = market === 'JP' ? '7203' : '005930'
-  const rows = await queryRows<{ date: unknown }>(`SELECT date FROM ${table} WHERE code = $1 ORDER BY date DESC LIMIT $2`, [code, 120])
+  const rows = await queryRows<{ date: unknown }>(`SELECT DISTINCT date FROM ${table} ORDER BY date DESC LIMIT $1`, [120])
   return { dates: rows.map((row) => dateOnly(row.date)) }
 }
 
