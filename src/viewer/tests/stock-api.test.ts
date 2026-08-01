@@ -81,6 +81,6 @@ describe('handleStockApi', () => {
     expect(result).toMatchObject({ series: [{ date: '2026-07-18' }, { date: '2026-07-25' }] })
     expect(result.series[0]).not.toHaveProperty('ma120')
     expect(result.series[0]).not.toHaveProperty('ma240')
-    expect(mocks.queryRows).toHaveBeenCalledWith(expect.stringContaining('stock_data_week_kr'), ['7203', '2026-07-30', 120])
+    expect(mocks.queryRows).toHaveBeenCalledWith(expect.stringContaining('stock_data_split_week_kr'), ['7203', '2026-07-30', 120])
   })
 })

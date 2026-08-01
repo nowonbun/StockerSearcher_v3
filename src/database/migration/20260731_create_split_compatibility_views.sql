@@ -13,8 +13,6 @@ SELECT o.code, o.date, o.open, o.high, o.low, o.close, o.volume,
        i."5mvavg", i."20mvavg", i."50mvavg", i."60mvavg", i."120mvavg", i."240mvavg",
        i.bollinger_upper_60_1 AS upperband60_1, i.bollinger_lower_60_1 AS lowerband60_1,
        i.bollinger_lower_60_3 AS lowerband60_3,
-       i.ichimoku_conversion, i.ichimoku_base, i.ichimoku_span_a, i.ichimoku_span_b,
-       i.ichimoku_lagging,
        o.create_date, o.update_date
 FROM stock_ohlcv_kr o JOIN stock_indicator_kr i USING (code, date);
 
@@ -24,8 +22,6 @@ SELECT o.code, o.date, o.open, o.high, o.low, o.close, o.volume,
        i."5mvavg", i."20mvavg", i."50mvavg", i."60mvavg", i."120mvavg", i."240mvavg",
        i.bollinger_upper_60_1 AS upperband60_1, i.bollinger_lower_60_1 AS lowerband60_1,
        i.bollinger_lower_60_3 AS lowerband60_3,
-       i.ichimoku_conversion, i.ichimoku_base, i.ichimoku_span_a, i.ichimoku_span_b,
-       i.ichimoku_lagging,
        o.create_date, o.update_date
 FROM stock_ohlcv_jp o JOIN stock_indicator_jp i USING (code, date);
 
@@ -35,8 +31,6 @@ SELECT o.code, o.date, o.open, o.high, o.low, o.close, o.volume,
        i."5mvavg", i."20mvavg", i."50mvavg", i."60mvavg", i."120mvavg", i."240mvavg",
        i.bollinger_upper_60_1 AS upperband60_1, i.bollinger_lower_60_1 AS lowerband60_1,
        i.bollinger_lower_60_3 AS lowerband60_3,
-       i.ichimoku_conversion, i.ichimoku_base, i.ichimoku_span_a, i.ichimoku_span_b,
-       i.ichimoku_lagging,
        o.create_date, o.update_date
 FROM stock_ohlcv_week_kr o JOIN stock_indicator_week_kr i USING (code, date);
 
@@ -46,7 +40,5 @@ SELECT o.code, o.date, o.open, o.high, o.low, o.close, o.volume,
        i."5mvavg", i."20mvavg", i."50mvavg", i."60mvavg", i."120mvavg", i."240mvavg",
        i.bollinger_upper_60_1 AS upperband60_1, i.bollinger_lower_60_1 AS lowerband60_1,
        i.bollinger_lower_60_3 AS lowerband60_3,
-       i.ichimoku_conversion, i.ichimoku_base, i.ichimoku_span_a, i.ichimoku_span_b,
-       i.ichimoku_lagging,
        o.create_date, o.update_date
 FROM stock_ohlcv_week_jp o JOIN stock_indicator_week_jp i USING (code, date);

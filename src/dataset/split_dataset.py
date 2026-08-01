@@ -189,27 +189,70 @@ def _indicator_rows_for_update(
     return [row for row in rows if pd.Timestamp(row[0]).date() >= start_date]
 
 
-def calculate_indicators(market: str, weekly: bool = True) -> None:
-    """Calculate MA, Bollinger (60/1σ and lower 3σ), and Ichimoku from OHLCV."""
+def calculate_all_indicators(market: str, weekly: bool = True) -> None:
+    """Recalculate and upsert indicators for every available OHLCV date."""
+    calculate_indicators(market, weekly=weekly, all_history=True)
+
+
+def calculate_indicators(market: str, weekly: bool = True, all_history: bool = False) -> None:
+    """Calculate MA, Bollinger (60/1σ and lower 3σ), and Ichimoku from OHLCV.
+
+    The default updates the configured recent window. ``all_history=True``
+    recalculates every available OHLCV date for the selected market.
+    """
     for is_weekly in (False, True) if weekly else (False,):
         tables = _tables(market, is_weekly)
+        frequency = "weekly" if is_weekly else "daily"
         with psycopg.connect(**static.db_config) as connection, connection.cursor() as cursor:
             cursor.execute(f"SELECT DISTINCT code FROM {tables.ohlcv} ORDER BY code")
             codes = [row[0] for row in cursor.fetchall()]
-        for code in codes:
+        processed_codes = 0
+        written_rows = 0
+        print(
+            f"indicator calculation started: market={market.upper()} frequency={frequency} codes={len(codes)}",
+            flush=True,
+        )
+        for position, code in enumerate(codes, start=1):
+            print(
+                f"indicator calculation reading: market={market.upper()} frequency={frequency} "
+                f"code={code} position={position}/{len(codes)}",
+                flush=True,
+            )
             with psycopg.connect(**static.db_config) as connection, connection.cursor() as cursor:
-                cursor.execute(
-                    f"SELECT date, open, high, low, close, volume FROM "
-                    f"(SELECT date, open, high, low, close, volume FROM {tables.ohlcv} "
-                    f"WHERE code = %s ORDER BY date DESC LIMIT %s) recent ORDER BY date",
-                    (code, static.indicator_history_rows),
+                if all_history:
+                    cursor.execute(
+                        f"SELECT date, open, high, low, close, volume FROM {tables.ohlcv} "
+                        f"WHERE code = %s ORDER BY date",
+                        (code,),
+                    )
+                else:
+                    cursor.execute(
+                        f"SELECT date, open, high, low, close, volume FROM "
+                        f"(SELECT date, open, high, low, close, volume FROM {tables.ohlcv} "
+                        f"WHERE code = %s ORDER BY date DESC LIMIT %s) recent ORDER BY date",
+                        (code, static.indicator_history_rows),
                 )
                 frame = pd.DataFrame(cursor.fetchall(), columns=("date", "open", "high", "low", "close", "volume"))
             if frame.empty:
+                processed_codes += 1
+                print(
+                    f"indicator calculation skipped: market={market.upper()} frequency={frequency} "
+                    f"code={code} reason=empty-source",
+                    flush=True,
+                )
                 continue
-            latest_date = pd.Timestamp(frame["date"].max()).date()
-            payload = [(code, *row) for row in _indicator_rows_for_update(_indicator_rows(frame), latest_date)]
+            rows = _indicator_rows(frame)
+            if not all_history:
+                latest_date = pd.Timestamp(frame["date"].max()).date()
+                rows = _indicator_rows_for_update(rows, latest_date)
+            payload = [(code, *row) for row in rows]
             if not payload:
+                processed_codes += 1
+                print(
+                    f"indicator calculation skipped: market={market.upper()} frequency={frequency} "
+                    f"code={code} reason=empty-payload",
+                    flush=True,
+                )
                 continue
             query = f'''INSERT INTO {tables.indicators} (code, date, "5mvavg", "20mvavg", "50mvavg", "60mvavg", "120mvavg", "240mvavg", bollinger_upper_60_1, bollinger_lower_60_1, bollinger_lower_60_3, ichimoku_conversion, ichimoku_base, ichimoku_span_a, ichimoku_span_b, ichimoku_lagging, create_date, update_date)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
@@ -217,3 +260,15 @@ def calculate_indicators(market: str, weekly: bool = True) -> None:
                 "5mvavg" = EXCLUDED."5mvavg", "20mvavg" = EXCLUDED."20mvavg", "50mvavg" = EXCLUDED."50mvavg", "60mvavg" = EXCLUDED."60mvavg", "120mvavg" = EXCLUDED."120mvavg", "240mvavg" = EXCLUDED."240mvavg", bollinger_upper_60_1 = EXCLUDED.bollinger_upper_60_1, bollinger_lower_60_1 = EXCLUDED.bollinger_lower_60_1, bollinger_lower_60_3 = EXCLUDED.bollinger_lower_60_3, ichimoku_conversion = EXCLUDED.ichimoku_conversion, ichimoku_base = EXCLUDED.ichimoku_base, ichimoku_span_a = EXCLUDED.ichimoku_span_a, ichimoku_span_b = EXCLUDED.ichimoku_span_b, ichimoku_lagging = EXCLUDED.ichimoku_lagging, update_date = now()'''
             with psycopg.connect(**static.db_config) as connection, connection.cursor() as cursor:
                 cursor.executemany(query, payload)
+            processed_codes += 1
+            written_rows += len(payload)
+            print(
+                f"indicator calculation written: market={market.upper()} frequency={frequency} "
+                f"code={code} rows={len(payload)} position={position}/{len(codes)}",
+                flush=True,
+            )
+        print(
+            f"indicator calculation completed: market={market.upper()} frequency={frequency} "
+            f"processed_codes={processed_codes} written_rows={written_rows}",
+            flush=True,
+        )

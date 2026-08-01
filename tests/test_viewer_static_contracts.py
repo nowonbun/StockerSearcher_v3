@@ -51,6 +51,21 @@ class ViewerStaticContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, text)
 
+    def test_stock_api_reads_display_data_from_split_compatibility_views(self) -> None:
+        text = (UTILS_ROOT / "stock-api.ts").read_text(encoding="utf-8")
+
+        for required in (
+            "data: 'stock_data_split_jp'",
+            "data: 'stock_data_split_kr'",
+            "weeklyData: 'stock_data_split_week_jp'",
+            "weeklyData: 'stock_data_split_week_kr'",
+            "NULL::numeric AS di_plus",
+            "NULL::numeric AS di_minus",
+            "NULL::numeric AS adx",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, text)
+
     def test_database_utility_requires_password_and_normalizes_date_and_numeric_values(self) -> None:
         text = (UTILS_ROOT / "db.ts").read_text(encoding="utf-8")
 

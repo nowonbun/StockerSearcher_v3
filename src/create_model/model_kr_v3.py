@@ -15,6 +15,11 @@ def compute_v3_features(raw):
     return build_v3_features(raw, _base_features, base._RAW_COLS)
 
 
+# ``predict.common`` loads V3 modules through the V2-compatible interface.
+V2_FEATURE_COLS = V3_FEATURE_COLS
+compute_v2_features = compute_v3_features
+
+
 def main() -> None:
     original_parse_args = base.parse_args
     base.compute_v2_features = compute_v3_features

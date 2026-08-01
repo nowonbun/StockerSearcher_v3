@@ -231,6 +231,26 @@ class SplitDatasetTests(unittest.TestCase):
         self.assertIn("SELECT DISTINCT code FROM stock_ohlcv_kr", query)
         cursor.executemany.assert_not_called()
 
+    def test_calculate_all_indicators_logs_frequency_completion_for_empty_code_list(self) -> None:
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        connection = MagicMock()
+        connection.__enter__.return_value.cursor.return_value.__enter__.return_value = cursor
+
+        with (
+            patch.object(split_dataset.psycopg, "connect", return_value=connection),
+            patch("builtins.print") as print_mock,
+        ):
+            split_dataset.calculate_all_indicators("KR", weekly=False)
+
+        print_mock.assert_any_call(
+            "indicator calculation started: market=KR frequency=daily codes=0", flush=True
+        )
+        print_mock.assert_any_call(
+            "indicator calculation completed: market=KR frequency=daily processed_codes=0 written_rows=0",
+            flush=True,
+        )
+
     def test_calculate_indicators_skips_insert_when_indicator_payload_is_empty(self) -> None:
         codes_cursor = MagicMock()
         codes_cursor.fetchall.return_value = [("005930",)]
@@ -327,6 +347,36 @@ class SplitDatasetTests(unittest.TestCase):
 
         _, payload = insert_cursor.executemany.call_args.args
         self.assertEqual(payload, [("005930", *row) for row in rows[1:]])
+
+    def test_calculate_all_indicators_reads_and_upserts_the_full_history(self) -> None:
+        codes_cursor = MagicMock()
+        codes_cursor.fetchall.return_value = [("005930",)]
+        codes_connection = MagicMock()
+        codes_connection.__enter__.return_value.cursor.return_value.__enter__.return_value = codes_cursor
+        rows_cursor = MagicMock()
+        rows_cursor.fetchall.return_value = [(date(2024, 1, 2), 1, 2, 0, 1, 9)]
+        rows_connection = MagicMock()
+        rows_connection.__enter__.return_value.cursor.return_value.__enter__.return_value = rows_cursor
+        insert_cursor = MagicMock()
+        insert_connection = MagicMock()
+        insert_connection.__enter__.return_value.cursor.return_value.__enter__.return_value = insert_cursor
+        rows = [
+            (pd.Timestamp("2024-01-02"), *range(1, 15)),
+            (pd.Timestamp("2026-02-27"), *range(1, 15)),
+        ]
+
+        with (
+            patch.object(split_dataset.psycopg, "connect", side_effect=[codes_connection, rows_connection, insert_connection]),
+            patch.object(split_dataset, "_indicator_rows", return_value=rows),
+        ):
+            split_dataset.calculate_all_indicators("KR", weekly=False)
+
+        query = rows_cursor.execute.call_args.args[0]
+        self.assertIn("FROM stock_ohlcv_kr WHERE code = %s ORDER BY date", query)
+        self.assertNotIn("LIMIT", query)
+        self.assertEqual(rows_cursor.execute.call_args.args[1], ("005930",))
+        _, payload = insert_cursor.executemany.call_args.args
+        self.assertEqual(payload, [("005930", *row) for row in rows])
 
     def test_collect_kr_refreshes_codes_before_daily_then_weekly_upserts(self) -> None:
         events: list[tuple[str, object]] = []

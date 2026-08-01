@@ -5,8 +5,8 @@ type Market = 'JP' | 'KR'
 type Tables = { predict: string; data: string; list: string; weeklyPredict: string; weeklyData: string }
 
 const tables: Record<Market, Tables> = {
-  JP: { predict: 'stock_predict_jp', data: 'stock_data_jp', list: 'stock_list_jp', weeklyPredict: 'stock_predict_week_jp', weeklyData: 'stock_data_week_jp' },
-  KR: { predict: 'stock_predict_kr', data: 'stock_data_kr', list: 'stock_list_kr', weeklyPredict: 'stock_predict_week_kr', weeklyData: 'stock_data_week_kr' },
+  JP: { predict: 'stock_predict_jp', data: 'stock_data_split_jp', list: 'stock_list_jp', weeklyPredict: 'stock_predict_week_jp', weeklyData: 'stock_data_split_week_jp' },
+  KR: { predict: 'stock_predict_kr', data: 'stock_data_split_kr', list: 'stock_list_kr', weeklyPredict: 'stock_predict_week_kr', weeklyData: 'stock_data_split_week_kr' },
 }
 
 function marketOf(value: unknown): Market {
@@ -106,7 +106,7 @@ async function series(market: Market, code: string, asOf: string, weekly: boolea
   const rows = await queryRows<Record<string, unknown>>(`
     SELECT date, open, high, low, close, volume, ${movingAverages},
            upperband60_1 AS bb_upper, lowerband60_1 AS bb_lower, lowerband60_3 AS bb_lower3,
-           di_plus, di_minus, adx
+           NULL::numeric AS di_plus, NULL::numeric AS di_minus, NULL::numeric AS adx
     FROM ${dataTable}
     WHERE code = $1 AND date <= $2
     ORDER BY date DESC
