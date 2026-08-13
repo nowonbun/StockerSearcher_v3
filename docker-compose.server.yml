@@ -21,7 +21,7 @@ x-batch-common: &batch-common
     BATCH_SCHEDULE_MODE: ${BATCH_SCHEDULE_MODE:-collect}
     BATCH_SCHEDULE_JP: ${BATCH_SCHEDULE_JP:-0 12,18 * * 1-5}
     BATCH_SCHEDULE_KR: ${BATCH_SCHEDULE_KR:-0 14,20 * * 1-5}
-    BATCH_MAX_SCHEDULE_DELAY_SECONDS: ${BATCH_MAX_SCHEDULE_DELAY_SECONDS:-300}
+    BATCH_MAX_SCHEDULE_DELAY_SECONDS: ${BATCH_MAX_SCHEDULE_DELAY_SECONDS:-18000}
   volumes:
     - stock-data:/opt/stock-data
     - batch-state:/var/lib/stock-batch

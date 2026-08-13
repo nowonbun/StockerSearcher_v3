@@ -15,6 +15,13 @@ from batch.runner import BatchAlreadyRunning, MarketLock
 
 
 class BatchRunnerTests(unittest.TestCase):
+    def test_compose_defaults_allow_five_hours_of_schedule_delay(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        expected = "BATCH_MAX_SCHEDULE_DELAY_SECONDS: ${BATCH_MAX_SCHEDULE_DELAY_SECONDS:-18000}"
+        for compose_name in ("docker-compose.yaml", "docker-compose.server.yml"):
+            compose_text = (repository_root / compose_name).read_text(encoding="utf-8")
+            self.assertIn(expected, compose_text, compose_name)
+
     def test_mode_tasks_are_sequential(self) -> None:
         self.assertEqual(tasks_for("full"), ("collect", "daily", "weekly"))
         self.assertEqual(tasks_for("split"), ("base", "indicators"))
