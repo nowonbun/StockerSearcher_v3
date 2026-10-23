@@ -28,7 +28,12 @@ class BatchRunnerTests(unittest.TestCase):
         self.assertEqual(command_for("JP", "collect")[1], "dataset/dataset_jp.py")
         self.assertEqual(command_for("KR", "base")[1], "dataset/base_dataset_kr.py")
         self.assertEqual(command_for("JP", "indicators")[1], "dataset/indicator_dataset_jp.py")
-        self.assertEqual(command_for("KR", "weekly")[1], "predict/predict_week_kr_v2.py")
+        for market in ("JP", "KR"):
+            for task, prefix in (("daily", ""), ("weekly", "week_")):
+                command = command_for(market, task)
+                self.assertEqual(command[1], f"predict/predict_{prefix}{market.lower()}.py")
+                self.assertEqual(command[2:], ["--model-version", "v3", "--save-db"])
+                self.assertTrue((Path(__file__).resolve().parents[1] / "src" / command[1]).is_file())
 
 
     def test_history_store_records_runs(self) -> None:

@@ -62,7 +62,7 @@ def save_stock_list(db_config: dict) -> List[stock_list_node.StockListNode]:
     """종목 목록을 다운로드 후 DB(STOCK_LIST_JP)에 upsert 저장하고 목록을 반환."""
     # https://www.jpx.co.jp/markets/statistics-equities/misc/01.html
     df = get_stock_list_by_url(
-        "https://www.jpx.co.jp//markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+        "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx"
     )
 
     stocks: List[stock_list_node.StockListNode] = [

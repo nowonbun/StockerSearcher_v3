@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-V3_FEATURE_COLS = [
+FEATURE_COLS = [
     "close_vs_lowerband60_1", "band_pos_60_1", "drawdown_20d", "ha_ret_1d", "ha_body_ratio",
     "close_vs_cloud_top", "cloud_thickness", "ma20_vs_ma60", "ma20_slope_5", "ma60_slope_10",
 ]
@@ -20,7 +20,7 @@ def _cloud(raw: np.ndarray, high: int, low: int, at: int) -> tuple[float, float]
     return min(span_a, span_b), max(span_a, span_b)
 
 
-def compute_v3_features(raw: np.ndarray, base_features, raw_columns: list[str]) -> np.ndarray:
+def compute_features(raw: np.ndarray, base_features, raw_columns: list[str]) -> np.ndarray:
     base = base_features(raw)
     idx = {name: i for i, name in enumerate(raw_columns)}
     close = raw[:, idx["Close"]].astype(np.float64)
@@ -46,7 +46,7 @@ def compute_v3_features(raw: np.ndarray, base_features, raw_columns: list[str]) 
     return np.concatenate([base, extra], axis=1).astype(np.float32)
 
 
-def eligible_v3(raw: np.ndarray, end: int, raw_columns: list[str], min_trans_amnt_sum: float = 1_000_000_000) -> bool:
+def eligible_sample(raw: np.ndarray, end: int, raw_columns: list[str], min_trans_amnt_sum: float = 1_000_000_000) -> bool:
     if end < 77 or end < 4:
         return False
     idx = {name: i for i, name in enumerate(raw_columns)}

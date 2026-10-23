@@ -45,8 +45,8 @@ def command_for(market: str, task: str) -> list[str]:
         "collect": [sys.executable, f"dataset/dataset_{market.lower()}.py"],
         "base": [sys.executable, f"dataset/base_dataset_{market.lower()}.py"],
         "indicators": [sys.executable, f"dataset/indicator_dataset_{market.lower()}.py"],
-        "daily": [sys.executable, f"predict/predict_{market.lower()}_v2.py", "--save-db"],
-        "weekly": [sys.executable, f"predict/predict_week_{market.lower()}_v2.py", "--save-db"],
+        "daily": [sys.executable, f"predict/predict_{market.lower()}.py", "--model-version", "v3", "--save-db"],
+        "weekly": [sys.executable, f"predict/predict_week_{market.lower()}.py", "--model-version", "v3", "--save-db"],
     }
     return commands[task]
 

@@ -7,7 +7,7 @@ import importlib
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -35,6 +35,7 @@ class PredictionSpec:
     default_require_upper_band_breakout: bool = False
     default_max_extension_ratio: float | None = None
     model_mode: str | None = None
+    model_version: str = "v3"
 
 
 ICHIMOKU_CONVERSION_PERIOD = 9
@@ -48,8 +49,9 @@ def _not_null_clause(columns: Iterable[str], excluded: set[str]) -> str:
     return " AND ".join(f'"{column.lower()}" IS NOT NULL' for column in columns if column not in excluded)
 
 
-def parse_args(spec: PredictionSpec) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=f"Run {spec.market} V2 stock prediction.")
+def parse_args(spec: PredictionSpec, argv=None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=f"{spec.market} 주가 예측 ({spec.model_version})", allow_abbrev=False)
+    parser.add_argument("--model-version", choices=("v2", "v3"), default=spec.model_version, help="예측 모델 버전 (기본: v3)")
     parser.add_argument("--table", default=spec.table)
     parser.add_argument("--start-date", default=static.start_date)
     parser.add_argument("--end-date", default=static.end_date)
@@ -75,7 +77,18 @@ def parse_args(spec: PredictionSpec) -> argparse.Namespace:
     parser.add_argument("--save-db", action="store_true")
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--code", default=None)
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.model_version != spec.model_version:
+        parser.error("선택한 모델 버전과 예측 설정이 일치하지 않습니다")
+    return args
+
+
+def run_prediction_cli(build_spec: Callable[[str], PredictionSpec], weekly: bool = False, argv=None) -> None:
+    """버전을 먼저 선택한 후 해당 버전의 기본값으로 나머지 옵션을 해석한다."""
+    selector = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    selector.add_argument("--model-version", choices=("v2", "v3"), default="v3")
+    selected, remaining = selector.parse_known_args(argv)
+    run_prediction(build_spec(selected.model_version), weekly=weekly, argv=remaining)
 
 
 def _fetch_raw_history(connection: postgres.Connection, table: str, code: str, history_days: int, cutoff: str | None, raw_columns: list[str], excluded_columns: set[str]) -> np.ndarray | None:
@@ -170,10 +183,11 @@ def _save_predictions(spec: PredictionSpec, args: argparse.Namespace, rows: list
         connection.close()
 
 
-def run_prediction(spec: PredictionSpec, weekly: bool = False) -> None:
-    args = parse_args(spec)
+def run_prediction(spec: PredictionSpec, weekly: bool = False, argv=None) -> None:
+    args = parse_args(spec, argv)
     base_module = importlib.import_module(f"create_model.{spec.base_module}")
-    v2_module = importlib.import_module(f"create_model.{spec.v2_module}")
+    feature_module = importlib.import_module(f"create_model.{spec.v2_module}")
+    feature_cols, compute_features, default_model_mode, _ = feature_module.get_probability_config(spec.model_version)
     database_config = static.db_config_jp if spec.market == "JP" else static.db_config_kr
     raw_columns = list(base_module._RAW_COLS)
     excluded_columns = {"LowerBand60_3"} if weekly else set()
@@ -192,9 +206,9 @@ def run_prediction(spec: PredictionSpec, weekly: bool = False) -> None:
     requested_cutoff = pd.to_datetime(args.as_of).date().isoformat()
     cutoff = min(requested_cutoff, row[0].isoformat()) if row and row[0] else requested_cutoff
 
-    model = base_module.StockTransformer(input_size=len(v2_module.V2_FEATURE_COLS), d_model=args.d_model, nhead=args.nhead, num_encoder_layers=args.num_encoder_layers, dim_feedforward=args.dim_feedforward, dropout=args.dropout)
+    model = base_module.StockTransformer(input_size=len(feature_cols), d_model=args.d_model, nhead=args.nhead, num_encoder_layers=args.num_encoder_layers, dim_feedforward=args.dim_feedforward, dropout=args.dropout)
     checkpoint_loader = importlib.import_module("create_model.model_jp").load_model_checkpoint
-    model_mode = spec.model_mode or getattr(v2_module, "MODEL_MODE", v2_module.V2_MODEL_MODE)
+    model_mode = spec.model_mode or default_model_mode
     model.load_state_dict(checkpoint_loader(args.model, model_mode, map_location="cpu"))
     model.eval()
 
@@ -203,10 +217,10 @@ def run_prediction(spec: PredictionSpec, weekly: bool = False) -> None:
     try:
         for index, code in enumerate(codes, start=1):
             if index == 1 or index % max(1, args.log_every) == 0:
-                print(f"[infer-v2] code={code} ({index})")
+                print(f"[infer-{spec.model_version}] code={code} ({index})")
             raw_history = _fetch_raw_history(connection, args.table, code, history_days, cutoff, raw_columns, excluded_columns)
             if raw_history is not None and _passes_selection_filters(raw_history, raw_columns, args):
-                sequence = v2_module.compute_v2_features(raw_history)[-args.seq_len:]
+                sequence = compute_features(raw_history)[-args.seq_len:]
                 with torch.no_grad():
                     logit = model(torch.from_numpy(sequence[None, ...])).item()
                     results.append((code, float(torch.sigmoid(torch.tensor(logit)).item())))

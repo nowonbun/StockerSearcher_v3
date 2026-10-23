@@ -3,13 +3,13 @@ from __future__ import annotations
 import numpy as np
 
 
-WEEK_V3_FEATURE_COLS = [
+FEATURE_COLS = [
     "close_vs_lowerband60_1", "band_pos_60_1", "drawdown_20d", "ha_ret_1d", "ha_body_ratio",
     "ma20_vs_ma60", "ma20_slope_5", "ma60_slope_10",
 ]
 
 
-def compute_week_v3_features(raw: np.ndarray, base_features, raw_columns: list[str]) -> np.ndarray:
+def compute_features(raw: np.ndarray, base_features, raw_columns: list[str]) -> np.ndarray:
     base = base_features(raw)
     indexes = {name: index for index, name in enumerate(raw_columns)}
     ma20 = raw[:, indexes["20MvAvg"]].astype(np.float64)
@@ -28,7 +28,7 @@ def compute_week_v3_features(raw: np.ndarray, base_features, raw_columns: list[s
     return np.concatenate([base, extra], axis=1).astype(np.float32)
 
 
-def eligible_week_v3(raw: np.ndarray, end: int, raw_columns: list[str], min_trans_amnt_sum: float = 1_000_000_000) -> bool:
+def eligible_sample(raw: np.ndarray, end: int, raw_columns: list[str], min_trans_amnt_sum: float = 1_000_000_000) -> bool:
     if end < 4:
         return False
     indexes = {name: index for index, name in enumerate(raw_columns)}
