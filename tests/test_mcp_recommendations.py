@@ -10,6 +10,54 @@ import mcp_server as server
 
 
 class RecommendationTests(unittest.TestCase):
+    def test_daily_and_weekly_history_use_split_views_and_keep_query_contract(self):
+        for market, code in (("KR", "005930"), ("JP", "9432")):
+            for weekly in (False, True):
+                for limit in (1, 0, -1):
+                    with self.subTest(market=market, weekly=weekly, limit=limit):
+                        history = server.stock_data_week if weekly else server.stock_data
+                        fixture = [{"code": code, "date": "2026-10-23", "close": 175}]
+                        with patch.object(server, "_rows", return_value=fixture) as rows:
+                            result = history(market.lower(), code, limit=limit, start_date="2026-10-01", end_date="2026-10-23")
+                        table = f"stock_data_split_{'week_' if weekly else ''}{market.lower()}"
+                        expected = f"SELECT * FROM {table} WHERE code = %s AND date >= %s AND date <= %s ORDER BY date DESC"
+                        params = (code, "2026-10-01", "2026-10-23")
+                        if limit > 0:
+                            expected += " LIMIT %s"
+                            params += (limit,)
+                        rows.assert_called_once_with(expected, params)
+                        self.assertEqual(result, fixture)
+
+    def test_ntt_history_and_recommendation_read_the_same_split_date_fixture(self):
+        fixture = {"date": "2026-10-23", "code": "9432", "name": "ＮＴＴ", "close": 175,
+                   "band": 173, "ma60": 170, "transAmnt": 43389920000, "ratio": Decimal("1.01156")}
+
+        def stored_rows(query, params):
+            # 구형 테이블에는 당일 행이 없고 분리 뷰에만 있는 상황을 재현한다.
+            if "FROM stock_data_split_jp" in query:
+                return [dict(fixture)]
+            return []
+
+        with patch.object(server, "_rows", side_effect=stored_rows):
+            candidate = server.recommend_stocks("JP", "2026-10-23", limit=1)["rows"][0]
+            history = server.stock_data("JP", "9432", start_date="2026-10-23", end_date="2026-10-23", limit=1)
+        self.assertEqual(len(history), 1)
+        for field in ("code", "date", "close"):
+            self.assertEqual(history[0][field], candidate[field])
+
+    def test_history_defaults_empty_results_and_database_errors_are_preserved(self):
+        for history, default_limit in ((server.stock_data, 2000), (server.stock_data_week, 500)):
+            with self.subTest(history=history.__name__):
+                with patch.object(server, "_rows", return_value=[]) as rows:
+                    self.assertEqual(history("JP", "9432"), [])
+                self.assertEqual(rows.call_args.args[1], ("9432", default_limit))
+                self.assertNotIn("date >=", rows.call_args.args[0])
+                self.assertNotIn("date <=", rows.call_args.args[0])
+                with patch.object(server, "_rows", side_effect=RuntimeError("database unavailable")) as rows:
+                    with self.assertRaisesRegex(RuntimeError, "database unavailable"):
+                        history("JP", "9432")
+                    self.assertEqual(rows.call_count, 1)
+
     def test_registered_tools_replace_predictions_only(self):
         names = {tool.name for tool in asyncio.run(server.mcp.list_tools())}
         self.assertEqual(names, {"readme", "usage", "list_stocks", "stock_data", "stock_data_week", "recommend_stocks"})

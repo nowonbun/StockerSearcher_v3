@@ -75,7 +75,8 @@ def _rows(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
 def _stock_data(market: str, code: str, limit: int, start_date: str | None, end_date: str | None, *, weekly: bool) -> list[dict[str, Any]]:
     if not code:
         raise ValueError("code is required")
-    table = _table("stock_data_week" if weekly else "stock_data", market)
+    # 웹·추천과 같은 분리 데이터 뷰를 사용해 구형 테이블의 수집 공백을 피한다.
+    table = _table("stock_data_split_week" if weekly else "stock_data_split", market)
     clauses = ["code = %s"]
     params: list[Any] = [code]
     if start_date:
@@ -152,8 +153,8 @@ async def usage(tool: str | None = None) -> dict[str, Any]:
         "notes": {
             "general": "예시 날짜는 호출 형식 설명용이며 데이터 존재를 보장하지 않는다. KR 금액은 원, JP 금액은 엔이다. 데이터는 최신성 보장 없이 저장된 값만 조회한다.",
             "list_stocks": "market 기본값 KR. 종목명·코드 순으로 반환한다.",
-            "stock_data": "market·code 필수. 날짜 범위는 양 끝을 포함한다. 최신 날짜부터 반환하며 limit 기본 2000, 0 이하면 제한이 없다.",
-            "stock_data_week": "market·code 필수. 날짜 범위는 양 끝을 포함한다. 최신 날짜부터 반환하며 limit 기본 500, 0 이하면 제한이 없다.",
+            "stock_data": "market·code 필수. 웹·추천과 같은 일봉 분리 데이터 뷰를 조회한다. 날짜 범위는 양 끝을 포함한다. 최신 날짜부터 반환하며 limit 기본 2000, 0 이하면 제한이 없다.",
+            "stock_data_week": "market·code 필수. 웹·추천과 같은 주봉 분리 데이터 뷰를 조회한다. 날짜 범위는 양 끝을 포함한다. 최신 날짜부터 반환하며 limit 기본 500, 0 이하면 제한이 없다.",
             "recommend_stocks": (
                 "market 기본 KR, weekly 기본 false, mode 기본 upper, limit 기본 20(1~500). "
                 "date는 YYYY-MM-DD이며 해당 날짜와 정확히 일치하는 데이터만 조회한다. 주봉도 저장된 주봉 날짜와 일치해야 한다. "

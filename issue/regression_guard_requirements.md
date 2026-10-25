@@ -49,6 +49,9 @@ npm test
 
 ## 한계
 
+- MCP 일봉·주봉은 웹·추천과 동일한 `stock_data_split_*` 뷰를 조회한다. `tests/test_mcp_recommendations.py`는 KR/JP·일봉/주봉별 SQL 경로, 날짜 범위·정렬·건수 제한의 유지, NTT `9432`의 `2026-10-23` 행이 분리 뷰에만 있는 fixture에서 추천과 일봉 일치, 빈 결과·DB 오류 전파를 검증한다. 실제 DB는 호출하지 않는다.
+- 위 경로 수정의 운영 검증은 서버 재빌드·재기동 후 동일 종목·기준일로 `recommend_stocks`와 `stock_data`를 비교하고 주봉 경로도 확인해야 한다. 재배포 전 운영 반영은 검증되지 않음이다. 복구는 MCP 조회 경로 변경을 되돌려 재배포하는 방식이며 DB·스킬은 변경하지 않는다. 구형 테이블 전용 컬럼을 기대하는 클라이언트의 호환성은 별도 확인한다.
+
 - MCP 후보 조회 계약은 `tests/test_mcp_recommendations.py`에서 `_rows`를 mock으로 격리하여 검증한다. KR/JP·일봉/주봉·상단/하단 조합, 웹과 같은 필터·거래대금 정렬·기본 날짜·기본값, 잘못된 입력, 빈 결과 및 MCP 도구 등록을 검사한다. 실행에 `mcp>=1,<2`, `uvicorn`, `psycopg[binary]`가 필요하다.
 - `list_predict_dates`, `predict_rows` 제거는 MCP 인터페이스에만 적용한다. 웹 예측 API는 유지하며, 운영 MCP의 재빌드·재기동 및 클라이언트 도구 목록 갱신 전에는 새 인터페이스가 반영되지 않는다. 실제 DB 쿼리 실행·원격 MCP 반영·추천 성과는 검증되지 않음이다.
 
