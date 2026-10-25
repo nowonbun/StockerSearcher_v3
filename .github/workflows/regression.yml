@@ -19,12 +19,12 @@ jobs:
       - name: Install Python test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pandas requests PyYAML "psycopg[binary]" finance-datareader yahoo_finance_api2
+          python -m pip install pandas requests PyYAML "psycopg[binary]" finance-datareader yahoo_finance_api2 "mcp>=1,<2" uvicorn
       - name: Run Python regression gate
         env:
           PYTHONPATH: src
           STOCK_DB_PASSWORD: ci-test-password
-        run: python -W error::ResourceWarning -m unittest tests/test_batch_runner.py tests/test_batch_process_wrapper.py tests/test_prediction_filters.py tests/test_viewer_static_contracts.py tests/test_split_dataset.py tests/test_regression_guard_contract.py -v
+        run: python -W error::ResourceWarning -m unittest tests/test_batch_runner.py tests/test_batch_process_wrapper.py tests/test_prediction_filters.py tests/test_viewer_static_contracts.py tests/test_split_dataset.py tests/test_regression_guard_contract.py tests/test_mcp_recommendations.py -v
 
   viewer-tests:
     runs-on: ubuntu-latest

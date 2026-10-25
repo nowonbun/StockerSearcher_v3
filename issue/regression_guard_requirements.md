@@ -25,7 +25,7 @@
 ```powershell
 $env:PYTHONPATH = "$PWD\src"
 $env:STOCK_DB_PASSWORD = 'test-password'
-python -W error::ResourceWarning -m unittest tests/test_batch_runner.py tests/test_batch_process_wrapper.py tests/test_prediction_filters.py tests/test_viewer_static_contracts.py tests/test_split_dataset.py tests/test_regression_guard_contract.py -v
+python -W error::ResourceWarning -m unittest tests/test_batch_runner.py tests/test_batch_process_wrapper.py tests/test_prediction_filters.py tests/test_viewer_static_contracts.py tests/test_split_dataset.py tests/test_regression_guard_contract.py tests/test_mcp_recommendations.py -v
 
 Set-Location src/viewer
 npm test
@@ -48,6 +48,9 @@ npm test
 5. CI가 실패하면 로컬에서 같은 명령을 재현한 후 수정본을 다시 제출한다.
 
 ## 한계
+
+- MCP 후보 조회 계약은 `tests/test_mcp_recommendations.py`에서 `_rows`를 mock으로 격리하여 검증한다. KR/JP·일봉/주봉·상단/하단 조합, 웹과 같은 필터·거래대금 정렬·기본 날짜·기본값, 잘못된 입력, 빈 결과 및 MCP 도구 등록을 검사한다. 실행에 `mcp>=1,<2`, `uvicorn`, `psycopg[binary]`가 필요하다.
+- `list_predict_dates`, `predict_rows` 제거는 MCP 인터페이스에만 적용한다. 웹 예측 API는 유지하며, 운영 MCP의 재빌드·재기동 및 클라이언트 도구 목록 갱신 전에는 새 인터페이스가 반영되지 않는다. 실제 DB 쿼리 실행·원격 MCP 반영·추천 성과는 검증되지 않음이다.
 
 - Python과 Vitest 단위 테스트는 실제 PostgreSQL, 외부 시세 제공자, Nuxt HTTP 서버, 브라우저, Prefect 서비스의 통합 동작을 검증하지 않는다.
 - 위 통합 범위는 검증되지 않음이며, 운영자 승인 아래 별도 환경에서 검증한다.

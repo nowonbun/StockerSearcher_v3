@@ -28,7 +28,28 @@ Prefect UI는 `http://localhost:4200`에서 엽니다. `prefect-runner`가 만�
 
 `mcp` 서비스는 PostgreSQL `stock` DB를 읽기 전용으로 조회하는 Streamable HTTP MCP 서버입니다. Docker Compose를 기동하면 호스트의 `8000` 포트에서 `/mcp` 경로를 제공합니다. `.env`의 `MCP_PORT`로 호스트 포트만 변경할 수 있습니다.
 
-제공 도구는 `list_stocks`, `stock_data`, `stock_data_week`, `list_predict_dates`, `predict_rows`입니다. 모든 도구는 `KR` 또는 `JP` 시장 코드만 받으며, 데이터 변경 도구는 제공하지 않습니다.
+제공 도구는 `readme`, `usage`, `list_stocks`, `stock_data`, `stock_data_week`, `recommend_stocks`입니다. 데이터 조회 도구의 시장 코드는 `KR` 또는 `JP`만 지원하며, 데이터 변경 도구는 제공하지 않습니다. 기존 MCP 예측 도구 `list_predict_dates`, `predict_rows`는 제거했으며, 웹 예측 API는 변경하지 않았습니다.
+
+AI는 `readme()`로 서버 용도·지원 시장·읽기 전용 범위·최신성 및 추천의 한계를 확인할 수 있습니다. `usage()`는 전체 도구의 설명·실제 MCP 입력 스키마·호출 인자 예시를 반환하며, `usage(tool="recommend_stocks")`로 특정 도구를 선택할 수 있습니다. 두 도움말 도구는 DB 연결 없이 동작합니다. MCP 초기 서버 안내에도 이 호출 순서를 포함하지만, AI가 반드시 호출하는지는 클라이언트 동작에 달려 있습니다.
+
+`recommend_stocks`는 웹의 볼린저밴드 스캐너와 같은 조건으로 후보를 거래대금 내림차순 조회합니다. 일목균형표나 모델 예측 기반 추천이 아니며 수익률을 보장하지 않습니다.
+
+| 입력 | 기본값 및 의미 |
+| --- | --- |
+| `market` | `KR` 또는 `JP`, 기본 `KR` |
+| `date` | `YYYY-MM-DD`. 생략 시 웹처럼 최근 30일 내 두 번째 최신 데이터 날짜, 한 개면 해당 날짜. 날짜가 없으면 빈 목록 |
+| `weekly` | `false`: 일봉, `true`: 주봉 |
+| `mode` | `upper`: 종가 > 볼린저 상단(기본), `lower`: 볼린저 하단 < 종가 < 60기간 이동평균 |
+| `trans_amnt_min` | 거래대금 하한(초과 조건). 일봉 KR 10억 원·JP 5억 엔, 주봉 KR 50억 원·JP 25억 엔 |
+| `close_max` | 종가 상한(미만 조건). KR 10만 원·JP 1,000엔 |
+| `limit` | 최대 후보 수, 기본 20, 1~500 |
+
+JP는 웹과 동일하게 `stocktype != 'ETF・ETN'` 조건을 적용합니다. 웹과 동일한 분리 데이터 뷰 `stock_data_split_*`를 조회하며, 조건을 충족하지 않는 종목을 채워 넣지 않습니다. 거래대금 동률 순서는 웹과 마찬가지로 보장하지 않습니다.
+
+반환값에는 적용된 시장·날짜·필터·정렬 기준과 `rows`가 포함됩니다. 각 후보는 `rank`, `date`, `code`, `name`, `close`, `transAmnt`, 밴드 가격·대비 비율, 선정 근거 `reason`을 제공하며 하단 모드는 `ma60`도 제공합니다. 순위는 상승 확률이 아닌 거래대금 순위입니다.
+
+호출 예: `recommend_stocks(market="KR", date="2026-10-23", mode="upper", weekly=false, limit=20)`.
+변경을 실행 서버에 반영하려면 운영 환경에서 MCP 서비스를 재빌드·재기동하고 클라이언트 도구 목록을 갱신해야 합니다. 소스 변경만으로 원격 서버가 갱신되지는 않습니다.
 
 ## 수동 실행
 
