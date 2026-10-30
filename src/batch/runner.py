@@ -160,11 +160,14 @@ def run_batch(
     config: BatchConfig | None = None,
     output_callback: OutputCallback | None = None,
     stream_subprocess_output: bool = True,
+    run_id: str | None = None,
 ) -> dict[str, str]:
     market = market.upper()
     config = config or BatchConfig.from_environment()
     tasks = tasks_for(mode)
-    run_id = uuid.uuid4().hex
+    run_id = run_id or uuid.uuid4().hex
+    if len(run_id) != 32 or any(c not in '0123456789abcdef' for c in run_id):
+        raise ValueError('run_id must be a 32-character lowercase hex ID')
     log_path = config.log_dir / f"{run_id}_{market.lower()}_{mode}.log"
     history = HistoryStore(config.database_path)
 

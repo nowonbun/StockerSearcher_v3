@@ -20,6 +20,7 @@ const panels: Array<{ key: PanelKey; title: string; weekly: boolean; kind: 'pred
   { key: 'lowerWeekly', title: 'LowerBand Scanner', weekly: true, kind: 'lower' },
 ]
 
+const showBatch = ref(false)
 const activePanel = ref<PanelKey>('predict')
 const activeMarkets = reactive<Record<PanelKey, Market>>({ predict: 'JP', upper: 'JP', lower: 'JP', predictWeekly: 'JP', upperWeekly: 'JP', lowerWeekly: 'JP' })
 const dates = reactive<Record<string, string[]>>({})
@@ -194,8 +195,10 @@ onMounted(() => { void loadDates().catch((cause) => { error.value = cause instan
 <template>
   <NuxtLayout>
     <div class="layout">
-      <aside class="sidebar"><div class="brand">Stock AI Portal</div><div class="brand-sub">AI-Powered Stock Analysis</div><nav><p>DAILY</p><button v-for="item in panels.filter((item) => !item.weekly)" :key="item.key" class="nav-item" :class="{ active: activePanel === item.key }" @click="selectPanel(item.key)">{{ item.title }}</button><p>WEEKLY</p><button v-for="item in panels.filter((item) => item.weekly)" :key="item.key" class="nav-item" :class="{ active: activePanel === item.key }" @click="selectPanel(item.key)">{{ item.title }}</button></nav></aside>
+      <aside class="sidebar"><div class="brand">Stock AI Portal</div><div class="brand-sub">AI-Powered Stock Analysis</div><nav><p>DAILY</p><button v-for="item in panels.filter((item) => !item.weekly)" :key="item.key" class="nav-item" :class="{ active: activePanel === item.key }" @click="showBatch = false; selectPanel(item.key)">{{ item.title }}</button><p>WEEKLY</p><button v-for="item in panels.filter((item) => item.weekly)" :key="item.key" class="nav-item" :class="{ active: activePanel === item.key }" @click="showBatch = false; selectPanel(item.key)">{{ item.title }}</button><p>운영</p><button class="nav-item" :class="{ active: showBatch }" @click="showBatch = true">배치 관리</button></nav></aside>
       <main class="content">
+        <BatchManager v-if="showBatch" />
+        <div v-else>
         <h1>{{ panel.title }} <small v-if="panel.weekly">(Weekly)</small></h1>
         <div class="tabs"><button v-for="item in (['JP', 'KR'] as Market[])" :key="item" :class="{ active: market === item }" @click="selectMarket(item)">{{ item }}</button></div>
         <section class="search-form">
@@ -207,6 +210,7 @@ onMounted(() => { void loadDates().catch((cause) => { error.value = cause instan
         <p v-if="error" class="error">{{ error }} — Nuxt DB API와 PostgreSQL 연결 설정을 확인하세요.</p>
         <div class="grid-wrap"><ClientOnly><AgGridVue v-if="filteredRows.length" class="stock-grid" :theme="gridTheme" :row-data="filteredRows" :column-defs="gridColumns" :default-col-def="defaultColDef" :pagination="true" :pagination-page-size="100" :pagination-page-size-selector="[50, 100, 200]" :animate-rows="true" @row-clicked="onGridRowClicked" /><template #fallback><p class="empty">Loading grid.</p></template></ClientOnly><p v-if="!filteredRows.length" class="empty">{{ loading ? 'Loading data.' : 'No search results.' }}</p></div>
         <div v-if="chart.open" class="chart-modal" @click.self="closeChart"><section class="chart-card" role="dialog" aria-modal="true" :aria-label="chart.title"><header><strong>{{ chart.title }}</strong><button aria-label="Close chart" @click="closeChart">×</button></header><p v-if="chart.loading" class="chart-message">Chart data is loading.</p><p v-else-if="chart.error" class="chart-message error">{{ chart.error }}</p><p v-else-if="!chart.rows.length" class="chart-message">No chart data is available.</p><template v-else><div class="chart-legend"><span class="heikin-ashi">Heikin-Ashi</span><span class="ma5">MA5</span><span class="ma20">MA20</span><span class="ma60">MA60</span><span class="band">Bollinger band</span></div><svg class="price-chart" viewBox="0 0 1000 420" role="img" aria-label="Heikin-Ashi and moving average chart"><line x1="44" y1="44" x2="44" y2="376" class="chart-grid" /><line x1="44" y1="376" x2="956" y2="376" class="chart-grid" /><polyline :points="chartLines.upper" class="line-band" /><polyline :points="chartLines.lower" class="line-band" /><g v-for="candle in chartLines.candles" :key="candle.index"><line :x1="candle.x" :x2="candle.x" :y1="candle.wickTop" :y2="candle.wickBottom" class="ha-wick" :class="{ rising: candle.rising, falling: !candle.rising }" /><rect :x="candle.x - chartLines.candleWidth / 2" :y="candle.bodyY" :width="chartLines.candleWidth" :height="candle.bodyHeight" :class="{ rising: candle.rising, falling: !candle.rising }" /></g><polyline :points="chartLines.ma5" class="line-ma5" /><polyline :points="chartLines.ma20" class="line-ma20" /><polyline :points="chartLines.ma60" class="line-ma60" /><text x="4" y="52">{{ format(chartLines.max, 2) }}</text><text x="4" y="376">{{ format(chartLines.min, 2) }}</text></svg></template></section></div>
+        </div>
       </main>
     </div>
     <div v-if="apiPending" class="api-loading-overlay" role="status" aria-live="polite" aria-label="Data is loading">

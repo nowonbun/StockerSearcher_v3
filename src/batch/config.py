@@ -7,7 +7,17 @@ from pathlib import Path
 
 
 MARKETS = ("JP", "KR")
-MODES = ("collect", "predict", "full", "daily", "weekly", "base", "indicators", "split")
+MODES = ("collect", "predict", "full")
+
+
+def saved_mode(mode: str) -> str:
+    """기존 환경 설정·저장된 예약/대기 작업만 세 패턴으로 전환합니다."""
+    if mode in MODES:
+        return mode
+    legacy = {"base": "collect", "indicators": "collect", "split": "collect", "daily": "predict", "weekly": "predict"}
+    if mode not in legacy:
+        raise ValueError(f"Unsupported saved batch mode: {mode}")
+    return legacy[mode]
 
 
 @dataclass(frozen=True)
@@ -42,7 +52,6 @@ def command_for(market: str, task: str) -> list[str]:
         raise ValueError(f"Unsupported market: {market}")
 
     commands = {
-        "collect": [sys.executable, f"dataset/dataset_{market.lower()}.py"],
         "base": [sys.executable, f"dataset/base_dataset_{market.lower()}.py"],
         "indicators": [sys.executable, f"dataset/indicator_dataset_{market.lower()}.py"],
         "daily": [sys.executable, f"predict/predict_{market.lower()}.py", "--model-version", "v3", "--save-db"],
@@ -53,17 +62,9 @@ def command_for(market: str, task: str) -> list[str]:
 
 def tasks_for(mode: str) -> tuple[str, ...]:
     if mode == "collect":
-        return ("collect",)
-    if mode == "base":
-        return ("base",)
-    if mode == "indicators":
-        return ("indicators",)
-    if mode == "split":
         return ("base", "indicators")
     if mode == "predict":
         return ("daily", "weekly")
     if mode == "full":
-        return ("collect", "daily", "weekly")
-    if mode in {"daily", "weekly"}:
-        return (mode,)
+        return ("base", "indicators", "daily", "weekly")
     raise ValueError(f"Unsupported mode: {mode}")

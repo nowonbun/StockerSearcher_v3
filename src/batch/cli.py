@@ -16,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--market", choices=[market.lower() for market in MARKETS], required=True)
     run.add_argument("--mode", choices=MODES, required=True)
     run.add_argument("--trigger-source", default="cli")
+    run.add_argument("--run-id", default=None)
     history = commands.add_parser("history", help="Print recent batch runs as JSON.")
     history.add_argument("--limit", type=int, default=20)
     return parser
@@ -28,7 +29,10 @@ def main() -> int:
         print(json.dumps(HistoryStore(config.database_path).recent_runs(arguments.limit), ensure_ascii=False, indent=2))
         return 0
     try:
-        result = run_batch(arguments.market, arguments.mode, arguments.trigger_source, config)
+        if arguments.run_id:
+            result = run_batch(arguments.market, arguments.mode, arguments.trigger_source, config, run_id=arguments.run_id)
+        else:
+            result = run_batch(arguments.market, arguments.mode, arguments.trigger_source, config)
     except BatchAlreadyRunning as error:
         print(str(error), file=sys.stderr)
         return 2

@@ -23,9 +23,9 @@ class BatchRunnerTests(unittest.TestCase):
             self.assertIn(expected, compose_text, compose_name)
 
     def test_mode_tasks_are_sequential(self) -> None:
-        self.assertEqual(tasks_for("full"), ("collect", "daily", "weekly"))
-        self.assertEqual(tasks_for("split"), ("base", "indicators"))
-        self.assertEqual(command_for("JP", "collect")[1], "dataset/dataset_jp.py")
+        self.assertEqual(tasks_for("full"), ("base", "indicators", "daily", "weekly"))
+        self.assertEqual(tasks_for("collect"), ("base", "indicators"))
+        self.assertEqual(command_for("JP", "base")[1], "dataset/base_dataset_jp.py")
         self.assertEqual(command_for("KR", "base")[1], "dataset/base_dataset_kr.py")
         self.assertEqual(command_for("JP", "indicators")[1], "dataset/indicator_dataset_jp.py")
         for market in ("JP", "KR"):
@@ -87,10 +87,10 @@ class BatchRunnerTests(unittest.TestCase):
 
     def test_cli_parser_requires_supported_market_mode_and_history_limit(self) -> None:
         parser = build_parser()
-        run = parser.parse_args(["run", "--market", "jp", "--mode", "split"])
+        run = parser.parse_args(["run", "--market", "jp", "--mode", "collect"])
         history = parser.parse_args(["history", "--limit", "3"])
 
-        self.assertEqual((run.command, run.market, run.mode, run.trigger_source), ("run", "jp", "split", "cli"))
+        self.assertEqual((run.command, run.market, run.mode, run.trigger_source), ("run", "jp", "collect", "cli"))
         self.assertEqual((history.command, history.limit), ("history", 3))
         with self.assertRaises(SystemExit):
             parser.parse_args(["run", "--market", "US", "--mode", "collect"])

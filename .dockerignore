@@ -9,3 +9,6 @@ src/env/config.ini
 src/create_model/log/
 src/models/*.pt
 postgressql/
+src/viewer/node_modules/
+src/viewer/.nuxt/
+src/viewer/.output/

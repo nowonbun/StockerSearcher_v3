@@ -17,7 +17,6 @@ x-batch-common: &batch-common
     BATCH_STATE_DIR: /var/lib/stock-batch
     BATCH_LOG_DIR: /var/lib/stock-batch/logs
     BATCH_TASK_TIMEOUT_SECONDS: ${BATCH_TASK_TIMEOUT_SECONDS:-7200}
-    PREFECT_API_URL: http://prefect-server:4200/api
     BATCH_SCHEDULE_MODE: ${BATCH_SCHEDULE_MODE:-collect}
     BATCH_SCHEDULE_JP: ${BATCH_SCHEDULE_JP:-0 12,18 * * 1-5}
     BATCH_SCHEDULE_KR: ${BATCH_SCHEDULE_KR:-0 14,20 * * 1-5}
@@ -29,8 +28,6 @@ x-batch-common: &batch-common
     - ${MODEL_DIR:?set MODEL_DIR in .env.server}:/opt/stocksearcher/models:ro
   depends_on:
     postgres:
-      condition: service_healthy
-    prefect-server:
       condition: service_healthy
 
 services:
@@ -53,40 +50,33 @@ services:
       retries: 5
     restart: unless-stopped
 
-  prefect-server:
-    image: ${BATCH_IMAGE:?set BATCH_IMAGE in .env.server}
-    command: prefect server start --host 0.0.0.0
-    environment:
-      PREFECT_HOME: /root/.prefect
-      # Reuse the existing PostgreSQL bootstrap database for Prefect metadata.
-      # SQLite cannot safely serve the runner's concurrent requests.
-      PREFECT_SERVER_DATABASE_DRIVER: postgresql+asyncpg
-      PREFECT_SERVER_DATABASE_HOST: postgres
-      PREFECT_SERVER_DATABASE_PORT: "5432"
-      PREFECT_SERVER_DATABASE_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.server}
-      PREFECT_SERVER_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.server}
-      PREFECT_SERVER_DATABASE_NAME: ${POSTGRES_DB:?set POSTGRES_DB in .env.server}
-      # Must be reachable from the browser opening the Prefect UI.
-      PREFECT_SERVER_UI_API_URL: ${PREFECT_SERVER_UI_API_URL:?set PREFECT_SERVER_UI_API_URL in .env.server}
-    volumes:
-      - ./data/metadata:/root/.prefect
-    ports:
-      - "${PREFECT_UI_PORT:-4200}:4200"
+  batch:
+    <<: *batch-common
+    command: python -m batch.service
+    init: true
+    stop_grace_period: 30s
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:4200/api/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 6
+      retries: 5
     restart: unless-stopped
 
-  prefect-runner:
-    <<: *batch-common
-    command: python -m batch.prefect_flows
+  batch-web:
+    image: ${BATCH_IMAGE:?set BATCH_IMAGE in .env.server}
+    command: python -m batch.web
+    environment:
+      BATCH_API_URL: http://batch:8001
+    ports:
+      - "${BATCH_UI_BIND:-127.0.0.1}:${BATCH_UI_PORT:-4200}:8002"
     depends_on:
-      postgres:
+      batch:
         condition: service_healthy
-      prefect-server:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   mcp:
@@ -117,7 +107,7 @@ services:
       STOCK_DB_USER: ${STOCK_DB_USER:?set STOCK_DB_USER in .env.server}
       STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env.server}
     ports:
-      - "${VIEWER_PORT:-4201}:8081"
+      - "127.0.0.1:${VIEWER_PORT:-4201}:8081"
     depends_on:
       postgres:
         condition: service_healthy
