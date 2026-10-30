@@ -3,7 +3,6 @@ import { createError, getHeader, getMethod, getRequestURL, getRouterParam, readB
 // 사용자가 URL이나 명령 문자열을 지정할 수 없는 내부 전용 프록시입니다.
 export async function handleBatchApi(event: H3Event) {
   const url = getRequestURL(event)
-  if (!['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname)) throw createError({ statusCode: 403, statusMessage: '로컬 호스트에서만 사용할 수 있습니다' })
   const path = getRouterParam(event, 'path') || ''
   const method = getMethod(event)
   const id = '[a-f0-9]{32}'

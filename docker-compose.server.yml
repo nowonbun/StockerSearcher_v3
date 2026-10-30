@@ -68,7 +68,7 @@ services:
     environment:
       BATCH_API_URL: http://batch:8001
     ports:
-      - "${BATCH_UI_BIND:-127.0.0.1}:${BATCH_UI_PORT:-4200}:8002"
+      - "${BATCH_UI_PORT:-4200}:8002"
     depends_on:
       batch:
         condition: service_healthy
@@ -107,7 +107,7 @@ services:
       STOCK_DB_USER: ${STOCK_DB_USER:?set STOCK_DB_USER in .env.server}
       STOCK_DB_PASSWORD: ${STOCK_DB_PASSWORD:?set STOCK_DB_PASSWORD in .env.server}
     ports:
-      - "127.0.0.1:${VIEWER_PORT:-4201}:8081"
+      - "${VIEWER_PORT:-4201}:8081"
     depends_on:
       postgres:
         condition: service_healthy

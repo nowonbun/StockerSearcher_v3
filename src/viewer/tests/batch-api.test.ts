@@ -25,17 +25,18 @@ describe('배치 관리 프록시', () => {
     await expect(handleBatchApi({} as never)).rejects.toMatchObject({ statusCode: 404 })
     expect(fetch).not.toHaveBeenCalled()
   })
-  it('교차 출처 쓰기와 외부 Host를 차단한다', async () => {
+  it('교차 출처 쓰기는 차단하고 서버 도메인 조회는 허용한다', async () => {
     mocks.method = 'POST'; mocks.headers = { origin: 'https://evil.example', 'content-type': 'application/json' }
     await expect(handleBatchApi({} as never)).rejects.toMatchObject({ statusCode: 403 })
-    mocks.method = 'GET'; mocks.headers = {}; mocks.url = 'http://attacker.example:4201'
-    await expect(handleBatchApi({} as never)).rejects.toMatchObject({ statusCode: 403 })
     expect(fetch).not.toHaveBeenCalled()
+    mocks.method = 'GET'; mocks.headers = {}; mocks.url = 'http://myserver.com:4201'
+    await expect(handleBatchApi({} as never)).resolves.toEqual({ runs: [] })
   })
-  it('로컬 JSON 실행은 인증 없이 전달하고 단순 폼 요청은 거부한다', async () => {
+  it('서버 도메인 JSON 실행은 인증 없이 전달하고 단순 폼 요청은 거부한다', async () => {
     mocks.method = 'POST'; mocks.body = { market: 'KR', mode: 'collect' }
     await expect(handleBatchApi({} as never)).rejects.toMatchObject({ statusCode: 403 })
-    mocks.headers = { 'content-type': 'application/json', origin: 'http://localhost:4201' }
+    mocks.url = 'http://myserver.com:4201'
+    mocks.headers = { 'content-type': 'application/json', origin: 'http://myserver.com:4201' }
     await expect(handleBatchApi({} as never)).resolves.toEqual({ runs: [] })
     expect(fetch).toHaveBeenCalledWith('http://batch:8001/runs', expect.objectContaining({ method: 'POST', body: JSON.stringify(mocks.body) }))
   })

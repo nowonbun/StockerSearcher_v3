@@ -278,9 +278,6 @@ def create_web_app(client=None):
 
     async def endpoint(request: Request):
         path, method = request.url.path, request.method
-        # 무인증 로컬 도구입니다. DNS rebinding을 포함한 외부 Host도 거부합니다.
-        if request.url.hostname not in ('localhost', '127.0.0.1', '::1'):
-            return Response('로컬 호스트에서만 사용할 수 있습니다', status_code=400, headers=HEADERS)
         secure = request.url.scheme == 'https'
         if path == '/health' and method == 'GET':
             return Response('ok', headers=HEADERS)
