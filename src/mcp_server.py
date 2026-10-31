@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import datetime as dt
+import asyncio
 import math
 import os
 from decimal import Decimal
 from typing import Any
+from time import perf_counter
 
 import psycopg
 from psycopg.rows import dict_row
@@ -14,7 +16,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.routing import Mount
+from starlette.middleware import Middleware
 import uvicorn
+
+from mcp_audit import AuditMiddleware, request_metadata, safe_record
 
 
 MARKETS = ("KR", "JP")
@@ -92,7 +97,32 @@ def _stock_data(market: str, code: str, limit: int, start_date: str | None, end_
     return _rows(query, tuple(params))
 
 
-mcp = FastMCP(
+class AuditedFastMCP(FastMCP):
+    """MCP 디스패치 경계에서 검증 실패·알 수 없는 도구까지 한 번씩 기록한다."""
+    async def call_tool(self, name: str, arguments: dict[str, Any]):
+        start, status, error_type = perf_counter(), 'success', ''
+        metadata = {'client': 'unknown', 'ip': ''}
+        try:
+            request = self.get_context().request_context.request
+        except ValueError:
+            request = None  # 직접 호출/stdio에서는 HTTP 클라이언트 정보를 사용할 수 없다.
+        if request is not None:
+            metadata = request_metadata(request.scope)
+        try:
+            return await super().call_tool(name, arguments)
+        except asyncio.CancelledError:
+            status, error_type = 'cancelled', 'CancelledError'
+            raise
+        except Exception as error:
+            status, error_type = 'failed', type(error).__name__
+            raise
+        finally:
+            await asyncio.to_thread(safe_record, kind='tool', name=name, status=status,
+                                    arguments=arguments, error_type=error_type,
+                                    duration_ms=(perf_counter()-start)*1000, **metadata)
+
+
+mcp = AuditedFastMCP(
     "stocksearcher-postgres-mcp",
     instructions=(
         "한국·일본 주식의 저장된 데이터를 조회하는 읽기 전용 MCP입니다. "
@@ -271,7 +301,8 @@ def create_asgi_app() -> Starlette:
     lifespan = getattr(mcp_app, "lifespan", None)
     if lifespan is None and hasattr(mcp_app, "router"):
         lifespan = mcp_app.router.lifespan_context
-    return Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=lifespan)
+    return Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=lifespan,
+                     middleware=[Middleware(AuditMiddleware)])
 
 
 def main() -> None:

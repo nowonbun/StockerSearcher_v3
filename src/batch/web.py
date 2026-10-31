@@ -8,6 +8,7 @@ import math
 import os
 import secrets
 import re
+import sqlite3
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
@@ -22,6 +23,7 @@ from starlette.routing import Route
 
 from batch.config import MARKETS, MODES
 from batch.scheduler import SEOUL
+from mcp_audit import AuditStore
 
 MODE_NAMES = {'collect': '통합 데이터 수집', 'predict': '예측', 'full': '수집·예측'}
 # 과거 완료 이력은 원래 작업 구분을 보존해 읽기만 합니다. 새 실행에는 노출하지 않습니다.
@@ -36,6 +38,7 @@ def mode_name(mode):
 STATUS_NAMES = {'queued': '대기', 'running': '실행 중', 'cancelling': '취소 중', 'succeeded': '성공', 'failed': '실패', 'cancelled': '취소', 'interrupted': '중단'}
 PAGES = {'dashboard': ('대시보드', '배치 작업의 실행 현황을 한눈에 확인하고, 스케줄 관리 및 수동 실행을 할 수 있습니다.'), 'jobs': ('배치 작업 관리', '시장과 작업을 선택해 한 번에 수동 실행합니다.'), 'schedules': ('스케줄 관리 (Cron)', '시장별 예약을 설정합니다. 모든 예약은 Asia/Seoul 시간대를 사용합니다.'), 'history': ('실행 이력', '최근 100건의 실행 상태와 소요 시간을 확인합니다.'), 'logs': ('로그 조회', '실행별 작업 결과와 마지막 64KiB의 로그를 확인합니다.'), 'settings': ('시스템 설정', '실행 정책과 보안 설정을 확인합니다. 비밀정보는 표시하지 않습니다.')}
 HEADERS = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'Content-Security-Policy': "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"}
+PAGES['mcp'] = ('MCP 이용 현황', '주식 조회 MCP의 HTTP 접속 기록과 도구 호출 이력을 확인합니다.')
 
 
 class BackendError(Exception):
@@ -214,10 +217,46 @@ def schedule_html(schedules, csrf):
     return f'<div class="schedule-grid">{rows}</div><div class="card guidance"><h2>Cron 사용 안내</h2><p><code>0 12,18 * * 1-5</code> → 평일 12:00, 18:00 실행</p><p>숫자, *, 목록, 범위, /간격을 지원합니다. 0·7은 일요일입니다. 일·요일을 모두 제한하면 OR로 판정합니다.</p><p>중단 중 누락된 예약은 재생하지 않습니다. 저장 즉시 적용되며 재시작 후에도 유지됩니다.</p></div>'
 
 
-def dashboard_html(*, page='dashboard', runs=None, schedules=None, summary=None, csrf='', query='', status='', detail=None, log='', notice='', error='', auto=False):
+def mcp_usage_html(report, filters):
+    if report is None:
+        return ''
+    fields = [('start', '시작일', 'date'), ('end', '종료일', 'date'),
+              ('tool', '도구명 (정확히 일치)', 'text'), ('client', 'User-Agent (정확히 일치)', 'text')]
+    inputs = ''.join(f'<label>{label}<input type="{kind}" name="{key}" value="{e(filters.get(key, ""))}" maxlength="200"></label>' for key, label, kind in fields)
+    def options(values, key):
+        return ''.join(f'<option value="{e(value)}" {"selected" if filters.get(key, "")==value else ""}>{label}</option>' for value, label in values)
+    kinds = options([('', '전체'), ('access', 'HTTP 접속'), ('tool', '도구 호출')], 'kind')
+    states = options([('', '전체'), ('success', '성공'), ('failed', '실패'), ('cancelled', '취소'), ('200', 'HTTP 200'), ('202', 'HTTP 202'), ('400', 'HTTP 400'), ('403', 'HTTP 403'), ('404', 'HTTP 404'), ('500', 'HTTP 500')], 'status')
+    content = f'<section class="card settings-card"><h2>이력 검색</h2><form method="get" action="/" class="manual-run-form"><input type="hidden" name="page" value="mcp">{inputs}<label>유형<select name="kind">{kinds}</select></label><label>결과<select name="status">{states}</select></label><button class="button primary">조회</button></form><p class="muted">보관 기간 {int(report["retention_days"])}일 · Asia/Seoul · 새 기록 저장 시 만료 이력을 정리합니다. 집계는 현재 검색 조건과 보관 중인 기록 기준입니다.</p><p class="muted">HTTP 접속 요청 수는 완료된 HTTP 요청 수이며 사용자 수·AI 수·세션 수가 아닙니다. 도구 호출은 별도로 셉니다. User-Agent는 클라이언트의 자기 신고 값이며 AI 신원을 인증하지 않습니다. IP는 서버에서 관찰한 주소로 프록시 주소일 수 있습니다.</p></section>'
+    if not report['available']:
+        return content + '<section class="card guidance"><p>아직 기록 DB가 없습니다. MCP 첫 접속·호출 이후 생성됩니다. 호출 후에도 이 상태면 MCP 로그와 전용 볼륨 연결을 확인하세요.</p></section>'
+    counts = report['counts']
+    content += '<section class="card guidance"><h2>선택 조건 집계</h2>' + ''.join(f'<p>{label}: <strong>{int(counts[key]):,}</strong></p>' for key, label in [('access', 'HTTP 접속 요청'), ('tools', '도구 호출'), ('errors', '실패·취소 호출')]) + '</section>'
+    summaries = ''
+    for title, data, key in [('일별 기록 수 (최근 90개 날짜, 접속+호출)', report['daily'], 'day'), ('도구별 호출 수 (최대 30개)', report['tools'], 'name'), ('클라이언트별 기록 수 (최대 30개)', report['clients'], 'client')]:
+        lines = ''.join(f'<tr><td>{e(row[key])}</td><td>{int(row["count"]):,}</td></tr>' for row in data)
+        summaries += f'<section class="card guidance"><details><summary>{title}</summary><div class="table-scroll"><table><thead><tr><th>구분</th><th>건수</th></tr></thead><tbody>{lines or "<tr><td colspan=2>기록이 없습니다.</td></tr>"}</tbody></table></div></details></section>'
+    rows = ''
+    for row in report['rows']:
+        values = [stamp(row['occurred_at']), '도구 호출' if row['kind']=='tool' else 'HTTP 접속',
+                  row['name'], row['status'], row['client'], row['ip'],
+                  f'{row["duration_ms"]:.2f}', row['arguments'], row['error_type']]
+        rows += '<tr>' + ''.join(f'<td>{e(value)}</td>' for value in values) + '</tr>'
+    columns = ''.join(f'<th>{label}</th>' for label in ['시각', '유형', '도구/메서드', '결과', 'User-Agent', 'IP', '소요 ms', '조회 조건', '오류 유형'])
+    page = report['page']
+    links = ''
+    if page > 1:
+        links += f'<a class="button" href="{href("mcp", **{**filters, "page_number": page-1})}">이전</a> '
+    if page * 50 < report['total']:
+        links += f'<a class="button" href="{href("mcp", **{**filters, "page_number": page+1})}">다음</a>'
+    content += f'<section class="card guidance"><h2>상세 기록 · 총 {int(report["total"]):,}건 · {page}페이지</h2><div class="table-scroll"><table><thead><tr>{columns}</tr></thead><tbody>{rows or "<tr><td colspan=9>조건에 맞는 기록이 없습니다.</td></tr>"}</tbody></table></div>{links}<p class="muted">페이지당 50건. 인증정보·응답 본문·예외 원문은 저장하지 않습니다. 현재 화면은 조회 전용입니다. 저장 실패는 MCP 서비스 로그에서 확인하세요.</p></section>'
+    return content + summaries
+
+
+def dashboard_html(*, page='dashboard', runs=None, schedules=None, summary=None, csrf='', query='', status='', detail=None, log='', notice='', error='', auto=False, audit=None, audit_filters=None):
     runs, schedules, summary = runs or [], schedules or [], summary or {}
     title, description = PAGES.get(page, PAGES['dashboard'])
-    menu = [('dashboard', 'grid'), ('jobs', 'jobs'), ('schedules', 'calendar'), ('history', 'clock'), ('logs', 'file'), ('settings', 'settings')]
+    menu = [('dashboard', 'grid'), ('jobs', 'jobs'), ('schedules', 'calendar'), ('history', 'clock'), ('logs', 'file'), ('mcp', 'link'), ('settings', 'settings')]
     nav = ''.join(f'<a class="nav-item {"active" if page==key else ""}" href="{href(key)}">{icon(symbol)}<span>{e(PAGES[key][0])}</span></a>' for key, symbol in menu)
     count_failed = int(summary.get('today_failed', 0))
     content = ''
@@ -238,9 +277,12 @@ def dashboard_html(*, page='dashboard', runs=None, schedules=None, summary=None,
             if detail:
                 task_rows = ''.join(f'<tr><td>{e(TASK_NAMES.get(task["task_name"], task["task_name"]))}</td><td>{badge(task["status"])}</td><td>{e(task.get("exit_code", "—"))}</td></tr>' for task in detail.get('tasks', []))
                 task_rows = task_rows or '<tr><td colspan="3">아직 하위 작업이 없습니다.</td></tr>'
-                content += f'<section class="card log-card"><div class="section-heading"><h2>{e(detail["market"])} {e(mode_name(detail["mode"]))}</h2>{badge(detail["status"])}</div><p class="mono muted">실행 ID {e(detail["run_id"])}</p><p class="error-text">{e(detail.get("error_message") or "")}</p><div class="table-scroll"><table><thead><tr><th>하위 작업</th><th>상태</th><th>종료 코드</th></tr></thead><tbody>{task_rows}</tbody></table></div><h3>실행 로그 <small>마지막 64KiB</small></h3><pre>{e(log or "아직 로그가 없습니다.")}</pre></section>'
+                # 선택 결과는 긴 실행 목록보다 먼저 보여 클릭 직후 확인할 수 있게 합니다.
+                content = f'<section class="card log-card"><div class="section-heading"><h2>{e(detail["market"])} {e(mode_name(detail["mode"]))}</h2>{badge(detail["status"])}</div><p class="mono muted">실행 ID {e(detail["run_id"])}</p><p class="error-text">{e(detail.get("error_message") or "")}</p><div class="table-scroll"><table><thead><tr><th>하위 작업</th><th>상태</th><th>종료 코드</th></tr></thead><tbody>{task_rows}</tbody></table></div><h3>실행 로그 <small>마지막 64KiB</small></h3><pre>{e(log or "아직 로그가 없습니다.")}</pre></section>' + content
             else:
                 content += '<section class="card guidance"><p>위 실행 목록에서 상세보기를 선택하면 작업 결과와 로그가 표시됩니다.</p></section>'
+    elif page == 'mcp':
+        content = mcp_usage_html(audit, audit_filters or {})
     else:
         content = '<section class="card settings-card"><h2>운영 정책</h2><dl><dt>웹 렌더링</dt><dd>Python · 서버 렌더링 HTML/CSS · 프런트엔드 빌드 불필요</dd><dt>실행 엔진</dt><dd>자체 Python 러너 · Linux 컨테이너 · 단일 worker</dd><dt>시간대</dt><dd>Asia/Seoul (UTC+09:00)</dd><dt>실행 순서</dt><dd>JP/KR 전체 FIFO 순차 실행 · 동일 시장·모드 중복 등록 차단</dd><dt>대기열</dt><dd>최대 100건 · SQLite에 영속 저장</dd><dt>재시작</dt><dd>대기 작업 유지 · 실행 중 작업 interrupted 처리 · 누락 예약 재생 안 함</dd><dt>접속</dt><dd>로컬 단독 사용 · 로그인 없음 · 요청 위조 방지(CSRF) 유지</dd><dt>데이터 보호</dt><dd>취소는 커밋된 DB 변경을 롤백하지 않음 · CLI 직접 실행은 전체 큐 우회</dd></dl><p class="muted">내부 DB 접속 정보는 표시하지 않습니다. 인증이 없으므로 외부에 공개하지 마세요.</p></section>'
     notification_dot = '<span class="notification-dot"></span>' if count_failed else ''
@@ -255,7 +297,7 @@ def dashboard_html(*, page='dashboard', runs=None, schedules=None, summary=None,
     return f'<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{head_refresh}<title>{e(title)} · 배치 시스템</title><link rel="stylesheet" href="/assets/dashboard.css"></head><body><aside class="sidebar"><a class="brand" href="/">{icon("database")}<span>배치 시스템</span></a><nav aria-label="주 메뉴">{nav}</nav><div class="sidebar-footer"><span class="live-dot on"></span>자체 배치 엔진<span class="engine-label">PYTHON SERVER</span></div></aside><div class="workspace"><header class="topbar"><span class="topbar-location">운영 관리 <span>/</span> {e(title)}</span><div class="topbar-actions">{notification}<a class="profile" href="{href("settings")}"><span class="avatar">{icon("user")}</span><span>로컬 사용자</span><span class="chevron">⌄</span></a></div></header><main><div class="page-heading"><div><h1>{e(title)}</h1><p>{e(description)}</p></div>{auto_link}</div>{message}{content}<footer class="page-footer"><span>StockSearcher Batch Console</span><span>서버 렌더링 · Asia/Seoul</span></footer></main></div></body></html>'
 
 
-def create_web_app(client=None):
+def create_web_app(client=None, audit_store=None):
     client = client or BatchClient(os.environ.get('BATCH_API_URL', 'http://batch:8001'))
     css_path = Path(__file__).resolve().parent / 'static' / 'dashboard.css'
 
@@ -333,6 +375,15 @@ def create_web_app(client=None):
         page = request.query_params.get('page', 'dashboard')
         if page not in PAGES:
             return page_html(dashboard_html(csrf=csrf, error='페이지를 찾을 수 없습니다.'), 404)
+        if page == 'mcp':
+            filters = {key: request.query_params[key][:200] for key in ('start', 'end', 'kind', 'tool', 'client', 'status', 'page_number') if request.query_params.get(key)}
+            try:
+                report = await asyncio.to_thread((audit_store or AuditStore()).report, filters)
+                return page_html(dashboard_html(page=page, csrf=csrf, audit=report, audit_filters=filters))
+            except ValueError as error:
+                return page_html(dashboard_html(page=page, csrf=csrf, error=str(error)), 400)
+            except (OSError, sqlite3.Error):
+                return page_html(dashboard_html(page=page, csrf=csrf, error='MCP 기록 DB를 조회할 수 없습니다. 볼륨·권한·DB 상태를 확인하세요.'), 503)
         query = request.query_params.get('q', '')[:100]
         status = request.query_params.get('status', '')
         detail, log = None, ''

@@ -130,6 +130,80 @@ class PythonBatchWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('배치 API 연결 실패', response.body.decode())
         self.assertNotIn('Traceback', response.body.decode())
 
+    async def test_detail_links_show_selected_run_above_long_history_without_mutation(self):
+        import re
+        from html import unescape
+        from urllib.parse import urlsplit
+
+        base_get = self.client.get.side_effect
+        for market in ('JP', 'KR'):
+            with self.subTest(market=market):
+                jobs = [{'run_id': f'{index:032x}', 'market': market, 'mode': 'collect',
+                         'status': 'succeeded', 'created_at': '2026-10-31T00:00:00+00:00'}
+                        for index in range(1, 101)]
+                selected = dict(jobs[0], tasks=[{'task_name': 'base', 'status': 'succeeded', 'exit_code': 0}])
+                def get(path):
+                    if path == '/runs':
+                        return {'runs': jobs}
+                    if path == f'/runs/{selected["run_id"]}':
+                        return selected
+                    if path == f'/runs/{selected["run_id"]}/log':
+                        return {'text': f'{market} selected run log'}
+                    return base_get(path)
+                self.client.get.side_effect = get
+                for page in ('dashboard', 'history', 'logs'):
+                    with self.subTest(page=page):
+                        response = await self.call(query=f'page={page}')
+                        link = unescape(re.search(r'href="([^"]+)">상세보기</a>', response.body.decode()).group(1))
+                        target = urlsplit(link)
+                        response = await self.call(path=target.path, query=target.query)
+                        self.assertEqual(response.status_code, 200)
+                        text = response.body.decode()
+                        self.assertIn(f'실행 ID {selected["run_id"]}', text)
+                        self.assertIn(f'{market} selected run log', text)
+                        self.assertIn('시세 수집', text)
+                        self.assertLess(text.index('class="card log-card"'), text.index('class="card history-card"'))
+                self.client.post.assert_not_called()
+                self.client.put.assert_not_called()
+
+    async def test_mcp_page_reads_audit_without_calling_batch_or_stock_api(self):
+        audit = Mock()
+        audit.report.return_value = {'available': True, 'retention_days': 90, 'page': 1, 'total': 51,
+            'counts': {'access': 2, 'tools': 49, 'errors': 1},
+            'rows': [{'occurred_at': '2026-10-31T10:00:00+09:00', 'kind': 'tool', 'name': 'stock_data',
+                      'client': '<script>AI</script>', 'ip': '127.0.0.1', 'status': 'failed',
+                      'duration_ms': 10, 'arguments': '{"market":"KR"}', 'error_type': 'ToolError'}],
+            'daily': [{'day': '2026-10-31', 'count': 51}],
+            'tools': [{'name': 'stock_data', 'count': 49}],
+            'clients': [{'client': '<AI>', 'count': 51}]}
+        self.app = create_web_app(client=self.client, audit_store=audit)
+        response = await self.call(query='page=mcp&kind=tool&start=2026-10-01')
+        self.assertEqual(response.status_code, 200)
+        text = response.body.decode()
+        for phrase in ('MCP 이용 현황', 'HTTP 접속 요청', '도구 호출', 'stock_data', '2026-10-31', '다음', '90일', '자기 신고'):
+            self.assertIn(phrase, text)
+        self.assertNotIn('<script>AI</script>', text)
+        self.assertIn('&lt;script&gt;AI&lt;/script&gt;', text)
+        audit.report.assert_called_once_with({'kind': 'tool', 'start': '2026-10-01'})
+        self.client.get.assert_not_called()
+        self.client.post.assert_not_called()
+
+    async def test_mcp_page_distinguishes_no_database_bad_filter_and_storage_failure(self):
+        import sqlite3
+        audit = Mock()
+        self.app = create_web_app(client=self.client, audit_store=audit)
+        audit.report.return_value = {'available': False, 'retention_days': 90, 'page': 1, 'total': 0,
+            'counts': {'access': 0, 'tools': 0, 'errors': 0}, 'rows': [], 'daily': [], 'tools': [], 'clients': []}
+        response = await self.call(query='page=mcp')
+        self.assertIn('아직 기록 DB가 없습니다', response.body.decode())
+        audit.report.side_effect = ValueError('기간을 확인하세요')
+        self.assertEqual((await self.call(query='page=mcp')).status_code, 400)
+        audit.report.side_effect = sqlite3.OperationalError('PRIVATE DB PATH')
+        response = await self.call(query='page=mcp')
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn('PRIVATE DB PATH', response.body.decode())
+        self.assertIn('기록 DB를 조회할 수 없습니다', response.body.decode())
+
 
 class DashboardRenderTests(unittest.TestCase):
     def test_manual_execution_is_one_form_with_only_three_patterns(self):
