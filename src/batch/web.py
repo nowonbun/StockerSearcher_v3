@@ -220,17 +220,22 @@ def schedule_html(schedules, csrf):
 def mcp_usage_html(report, filters):
     if report is None:
         return ''
+    filters = {'kind': 'tool', **filters}
     fields = [('start', '시작일', 'date'), ('end', '종료일', 'date'),
-              ('tool', '도구명 (정확히 일치)', 'text'), ('client', 'User-Agent (정확히 일치)', 'text')]
+              ('tool', '함수명 (정확히 일치)', 'text'), ('client', 'User-Agent (정확히 일치)', 'text')]
     inputs = ''.join(f'<label>{label}<input type="{kind}" name="{key}" value="{e(filters.get(key, ""))}" maxlength="200"></label>' for key, label, kind in fields)
     def options(values, key):
         return ''.join(f'<option value="{e(value)}" {"selected" if filters.get(key, "")==value else ""}>{label}</option>' for value, label in values)
-    kinds = options([('', '전체'), ('access', 'HTTP 접속'), ('tool', '도구 호출')], 'kind')
+    kinds = options([('tool', '함수 호출'), ('access', 'HTTP 접속'), ('', '전체')], 'kind')
     states = options([('', '전체'), ('success', '성공'), ('failed', '실패'), ('cancelled', '취소'), ('200', 'HTTP 200'), ('202', 'HTTP 202'), ('400', 'HTTP 400'), ('403', 'HTTP 403'), ('404', 'HTTP 404'), ('500', 'HTTP 500')], 'status')
-    content = f'<section class="card settings-card"><h2>이력 검색</h2><form method="get" action="/" class="manual-run-form"><input type="hidden" name="page" value="mcp">{inputs}<label>유형<select name="kind">{kinds}</select></label><label>결과<select name="status">{states}</select></label><button class="button primary">조회</button></form><p class="muted">보관 기간 {int(report["retention_days"])}일 · Asia/Seoul · 새 기록 저장 시 만료 이력을 정리합니다. 집계는 현재 검색 조건과 보관 중인 기록 기준입니다.</p><p class="muted">HTTP 접속 요청 수는 완료된 HTTP 요청 수이며 사용자 수·AI 수·세션 수가 아닙니다. 도구 호출은 별도로 셉니다. User-Agent는 클라이언트의 자기 신고 값이며 AI 신원을 인증하지 않습니다. IP는 서버에서 관찰한 주소로 프록시 주소일 수 있습니다.</p></section>'
+    content = f'<section class="card settings-card"><h2>이력 검색</h2><form method="get" action="/" class="manual-run-form mcp-filter-form"><input type="hidden" name="page" value="mcp">{inputs}<label>유형<select name="kind">{kinds}</select></label><label>결과<select name="status">{states}</select></label><button class="button primary">조회</button></form><p class="muted">보관 기간 {int(report["retention_days"])}일 · Asia/Seoul · 새 기록 저장 시 만료 이력을 정리합니다. 집계는 현재 검색 조건과 보관 중인 기록 기준입니다.</p><p class="muted">기본 화면은 호출 함수명과 입력 인자를 보여줍니다. HTTP 접속 요청 수는 완료된 HTTP 요청 수이며 사용자 수·AI 수·세션 수가 아닙니다. 도구 호출은 별도로 셉니다. User-Agent는 클라이언트의 자기 신고 값이며 AI 신원을 인증하지 않습니다. IP는 서버에서 관찰한 주소로 프록시 주소일 수 있습니다.</p></section>'
     if not report['available']:
         return content + '<section class="card guidance"><p>아직 기록 DB가 없습니다. MCP 첫 접속·호출 이후 생성됩니다. 호출 후에도 이 상태면 MCP 로그와 전용 볼륨 연결을 확인하세요.</p></section>'
     counts = report['counts']
+    switch_filters = {key: value for key, value in filters.items() if key not in ('kind', 'status', 'tool', 'page_number')}
+    content += '<div class="tabs">' + ''.join(
+        f'<a class="tab {"active" if filters["kind"]==kind else ""}" href="{href("mcp", **switch_filters, kind=kind)}">{label}</a>'
+        for kind, label in [('tool', '함수 호출 기록 보기'), ('access', 'HTTP 접속 기록 보기'), ('', '전체 기록 보기')]) + '</div>'
     content += '<section class="card guidance"><h2>선택 조건 집계</h2>' + ''.join(f'<p>{label}: <strong>{int(counts[key]):,}</strong></p>' for key, label in [('access', 'HTTP 접속 요청'), ('tools', '도구 호출'), ('errors', '실패·취소 호출')]) + '</section>'
     summaries = ''
     for title, data, key in [('일별 기록 수 (최근 90개 날짜, 접속+호출)', report['daily'], 'day'), ('도구별 호출 수 (최대 30개)', report['tools'], 'name'), ('클라이언트별 기록 수 (최대 30개)', report['clients'], 'client')]:
@@ -238,18 +243,23 @@ def mcp_usage_html(report, filters):
         summaries += f'<section class="card guidance"><details><summary>{title}</summary><div class="table-scroll"><table><thead><tr><th>구분</th><th>건수</th></tr></thead><tbody>{lines or "<tr><td colspan=2>기록이 없습니다.</td></tr>"}</tbody></table></div></details></section>'
     rows = ''
     for row in report['rows']:
-        values = [stamp(row['occurred_at']), '도구 호출' if row['kind']=='tool' else 'HTTP 접속',
-                  row['name'], row['status'], row['client'], row['ip'],
+        is_tool = row['kind'] == 'tool'
+        result = {'success': '성공', 'failed': '실패', 'cancelled': '취소'}.get(row['status'], row['status']) if is_tool else f'HTTP {row["status"]}'
+        values = [stamp(row['occurred_at']), '함수 호출' if is_tool else 'HTTP 접속',
+                  f'{row["name"]}()' if is_tool else '— (함수 호출 아님)',
+                  '—' if is_tool else row['name'], result, row['client'], row['ip'],
                   f'{row["duration_ms"]:.2f}', row['arguments'], row['error_type']]
         rows += '<tr>' + ''.join(f'<td>{e(value)}</td>' for value in values) + '</tr>'
-    columns = ''.join(f'<th>{label}</th>' for label in ['시각', '유형', '도구/메서드', '결과', 'User-Agent', 'IP', '소요 ms', '조회 조건', '오류 유형'])
+    columns = ''.join(f'<th>{label}</th>' for label in ['시각', '유형', '호출 함수', 'HTTP 메서드', '결과', 'User-Agent', 'IP', '소요 ms', '입력 인자', '오류 유형'])
     page = report['page']
     links = ''
     if page > 1:
         links += f'<a class="button" href="{href("mcp", **{**filters, "page_number": page-1})}">이전</a> '
     if page * 50 < report['total']:
         links += f'<a class="button" href="{href("mcp", **{**filters, "page_number": page+1})}">다음</a>'
-    content += f'<section class="card guidance"><h2>상세 기록 · 총 {int(report["total"]):,}건 · {page}페이지</h2><div class="table-scroll"><table><thead><tr>{columns}</tr></thead><tbody>{rows or "<tr><td colspan=9>조건에 맞는 기록이 없습니다.</td></tr>"}</tbody></table></div>{links}<p class="muted">페이지당 50건. 인증정보·응답 본문·예외 원문은 저장하지 않습니다. 현재 화면은 조회 전용입니다. 저장 실패는 MCP 서비스 로그에서 확인하세요.</p></section>'
+    title = {'tool': '함수 호출 상세', 'access': 'HTTP 접속 상세'}.get(filters['kind'], '전체 상세 기록')
+    empty = '기록된 함수 호출이 없습니다. HTTP 접속만으로는 호출 함수를 알 수 없습니다. 기간·함수명 필터를 확인하고, MCP 도구를 호출한 뒤 다시 조회하세요.' if filters['kind']=='tool' else '조건에 맞는 기록이 없습니다.'
+    content += f'<section class="card guidance"><h2>{title} · 총 {int(report["total"]):,}건 · {page}페이지</h2><div class="table-scroll"><table><thead><tr>{columns}</tr></thead><tbody>{rows or f"<tr><td colspan=10>{empty}</td></tr>"}</tbody></table></div>{links}<p class="muted">페이지당 50건. 함수 호출은 MCP tools/call 요청의 함수명과 허용된 입력 인자를 기록합니다. GET·POST는 HTTP 메서드이지 함수명이 아닙니다. HTTP 307·404 기록만으로는 특정 함수 호출 여부를 확인할 수 없습니다. 인증정보·응답 본문·예외 원문은 저장하지 않습니다. 현재 화면은 조회 전용입니다. 저장 실패는 MCP 서비스 로그에서 확인하세요.</p></section>'
     return content + summaries
 
 
@@ -377,6 +387,8 @@ def create_web_app(client=None, audit_store=None):
             return page_html(dashboard_html(csrf=csrf, error='페이지를 찾을 수 없습니다.'), 404)
         if page == 'mcp':
             filters = {key: request.query_params[key][:200] for key in ('start', 'end', 'kind', 'tool', 'client', 'status', 'page_number') if request.query_params.get(key)}
+            # 누락은 함수 호출 기본 보기, 명시적인 빈 값은 전체 보기다.
+            filters['kind'] = request.query_params.get('kind', 'tool')[:200]
             try:
                 report = await asyncio.to_thread((audit_store or AuditStore()).report, filters)
                 return page_html(dashboard_html(page=page, csrf=csrf, audit=report, audit_filters=filters))

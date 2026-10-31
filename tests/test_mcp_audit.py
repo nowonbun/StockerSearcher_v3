@@ -82,6 +82,32 @@ class AuditTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['counts']['tools'], 5)
         self.assertEqual(result['counts']['errors'], 3)
 
+    async def test_stock_function_call_and_arguments_appear_in_default_dashboard_not_http_noise(self):
+        from unittest.mock import Mock
+        from starlette.requests import Request
+        from batch.web import create_web_app
+        with patch.dict(os.environ, {'MCP_AUDIT_DB': str(self.path)}), patch.object(server, '_rows', return_value=[]):
+            await server.mcp.call_tool('stock_data', {'market': 'KR', 'code': '005930', 'limit': 20})
+        self.store.record(kind='access', name='GET', status='404')
+        backend = Mock()
+        endpoint = create_web_app(client=backend, audit_store=self.store).routes[0].endpoint
+        scope = {'type': 'http', 'scheme': 'http', 'method': 'GET', 'path': '/',
+                 'query_string': b'page=mcp', 'headers': [(b'host', b'localhost')]}
+        response = await endpoint(Request(scope))
+        text = response.body.decode()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('stock_data()', text)
+        self.assertIn('005930', text)
+        self.assertIn('&quot;market&quot;: &quot;KR&quot;', text)
+        self.assertNotIn('<td>GET</td>', text)
+        self.assertIn('함수 호출 상세 · 총 1건', text)
+        scope['query_string'] = b'page=mcp&kind=access'
+        text = (await endpoint(Request(scope))).body.decode()
+        self.assertNotIn('stock_data()', text)
+        self.assertIn('<td>GET</td>', text)
+        self.assertIn('함수 호출 아님', text)
+        backend.get.assert_not_called()
+
     async def test_audit_write_failure_does_not_break_readonly_tool(self):
         with patch('mcp_audit.AuditStore.record', side_effect=OSError('private secret')):
             with self.assertLogs('mcp_audit', level='ERROR') as logs:

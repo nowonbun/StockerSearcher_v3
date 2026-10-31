@@ -204,8 +204,63 @@ class PythonBatchWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('PRIVATE DB PATH', response.body.decode())
         self.assertIn('기록 DB를 조회할 수 없습니다', response.body.decode())
 
+    async def test_mcp_defaults_to_function_calls_but_preserves_explicit_all_and_access_views(self):
+        from html.parser import HTMLParser
+        class ViewParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.selected = []
+                self.forms = []
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == 'option' and 'selected' in attrs:
+                    self.selected.append(attrs.get('value'))
+                if tag == 'form':
+                    self.forms.append(attrs)
+        audit = Mock()
+        audit.report.return_value = {'available': True, 'retention_days': 90, 'page': 1, 'total': 0,
+            'counts': {'access': 0, 'tools': 0, 'errors': 0}, 'rows': [], 'daily': [], 'tools': [], 'clients': []}
+        self.app = create_web_app(client=self.client, audit_store=audit)
+        response = await self.call(query='page=mcp')
+        audit.report.assert_called_with({'kind': 'tool'})
+        text = response.body.decode()
+        parser = ViewParser(); parser.feed(text)
+        self.assertIn('tool', parser.selected)
+        self.assertTrue(any('mcp-filter-form' in form.get('class', '') for form in parser.forms))
+        self.assertIn('기록된 함수 호출이 없습니다', text)
+        self.assertIn('HTTP 접속 기록 보기', text)
+        await self.call(query='page=mcp&kind=')
+        audit.report.assert_called_with({'kind': ''})
+        await self.call(query='page=mcp&kind=access')
+        audit.report.assert_called_with({'kind': 'access'})
+
 
 class DashboardRenderTests(unittest.TestCase):
+    def test_mcp_filters_use_themed_text_and_date_controls_with_responsive_columns(self):
+        import re
+        css = (Path(__file__).resolve().parents[1] / 'src/batch/static/dashboard.css').read_text(encoding='utf-8')
+        rule = next((body for selectors, body in re.findall(r'([^{}]+)\{([^{}]*)\}', css)
+                     if '.mcp-filter-form input' in selectors and '.mcp-filter-form select' in selectors), '')
+        for declaration in ('min-height:42px', 'padding:9px 12px', 'border:1px solid #d7e1ee', 'border-radius:6px', 'background:#fff', 'color:#334862'):
+            self.assertIn(declaration, rule)
+        self.assertIn('.mcp-filter-form{grid-template-columns:repeat(4,minmax(0,1fr))}', css)
+        self.assertIn('@media(max-width:900px){.mcp-filter-form{grid-template-columns:repeat(2,minmax(0,1fr))}', css)
+        self.assertIn('@media(max-width:650px){.mcp-filter-form{grid-template-columns:minmax(0,1fr)}', css)
+
+    def test_mcp_table_separates_function_names_from_http_methods(self):
+        base = {'occurred_at': '2026-10-31T10:00:00+09:00', 'client': 'AI', 'ip': '127.0.0.1',
+                'duration_ms': 10, 'arguments': '{}', 'error_type': ''}
+        report = {'available': True, 'retention_days': 90, 'page': 1, 'total': 2,
+            'counts': {'access': 1, 'tools': 1, 'errors': 0}, 'daily': [], 'tools': [], 'clients': [],
+            'rows': [dict(base, kind='tool', name='stock_data', status='success'),
+                     dict(base, kind='access', name='GET', status='404')]}
+        text = dashboard_html(page='mcp', audit=report, audit_filters={'kind': ''})
+        self.assertIn('<th>호출 함수</th>', text)
+        self.assertIn('<th>HTTP 메서드</th>', text)
+        self.assertIn('<td>stock_data()</td><td>—</td><td>성공</td>', text)
+        self.assertIn('<td>— (함수 호출 아님)</td><td>GET</td><td>HTTP 404</td>', text)
+        self.assertNotIn('도구/메서드', text)
+
     def test_manual_execution_is_one_form_with_only_three_patterns(self):
         from html.parser import HTMLParser
         from batch.config import MODES, MARKETS
