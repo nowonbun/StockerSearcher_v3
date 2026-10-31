@@ -54,6 +54,44 @@ class BatchServiceTests(unittest.TestCase):
         self.assertEqual(summary['daily'][-1]['date'], '2026-10-29')
         self.assertEqual(len(summary['daily']), 7)
 
+    def test_running_count_excludes_unmanaged_history(self):
+        job = self.manager.submit('JP', 'collect')
+        self.manager._update(job['run_id'], status='running')
+        for value in ('a', 'b', 'c'):
+            self.manager.history.start_run(run_id=value*32, market='KR', mode='base', trigger_source='cli', started_at='2026-10-29T00:00:00+00:00', log_path='unused')
+        summary = self.manager.summary()
+        self.assertEqual(summary['running'], 1)
+        self.assertEqual(summary['total_runs'], 4)
+        self.manager._update(job['run_id'], status='cancelling')
+        self.assertEqual(self.manager.summary()['running'], 1)
+
+    def test_restart_recovers_orphan_history_and_is_idempotent(self):
+        run_id = 'a'*32
+        self.manager.history.start_run(run_id=run_id, market='KR', mode='base', trigger_source='cli', started_at='2026-10-29T00:00:00+00:00', log_path='unused')
+        self.manager.history.start_task(run_id, 'base', '2026-10-29T00:00:00+00:00', 'test')
+        queued = self.manager.submit('JP', 'predict')
+        self.manager.recover()
+        detail = self.manager.detail(run_id)
+        self.assertEqual(detail['status'], 'interrupted')
+        self.assertIsNotNone(detail['finished_at'])
+        self.assertEqual(detail['tasks'][0]['status'], 'interrupted')
+        self.assertEqual(detail['tasks'][0]['exit_code'], -1)
+        self.assertEqual(self.manager.detail(queued['run_id'])['status'], 'queued')
+        self.manager.recover()
+        self.assertEqual(self.manager.detail(run_id), detail)
+
+    def test_restart_preserves_live_cli_and_completed_history(self):
+        from batch.runner import MarketLock
+        for value in ('a', 'b'):
+            self.manager.history.start_run(run_id=value*32, market='KR', mode='base', trigger_source='cli', started_at='2026-10-29T00:00:00+00:00', log_path='unused')
+        self.manager.history.finish_run('b'*32, '2026-10-29T01:00:00+00:00', 'succeeded')
+        with MarketLock(self.config.lock_dir / 'kr.lock'):
+            self.manager.recover()
+        self.assertEqual(self.manager.detail('a'*32)['status'], 'running')
+        self.manager.recover()
+        self.assertEqual(self.manager.detail('a'*32)['status'], 'interrupted')
+        self.assertEqual(self.manager.detail('b'*32)['status'], 'succeeded')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

@@ -22,7 +22,7 @@ from starlette.routing import Route
 
 from batch.config import BatchConfig, MARKETS, MODES, saved_mode
 from batch.history import HistoryStore
-from batch.runner import MarketLock, _environment
+from batch.runner import BatchAlreadyRunning, MarketLock, _environment
 from batch.scheduler import Cron
 from batch.scheduler import SEOUL
 
@@ -99,6 +99,23 @@ class BatchManager:
             for row in interrupted:
                 self._finish_history(row['run_id'], 'interrupted', '배치 서비스 재시작')
             conn.execute("UPDATE jobs SET status='interrupted', finished_at=?, error_message='배치 서비스 재시작' WHERE status IN ('running','cancelling')", (datetime.now(UTC).isoformat(),))
+            # 관리 큐에 없는 과거 CLI 이력도 정리합니다. 시장 잠금이 있으면 실행 중일 수 있으므로 보존합니다.
+            history = self.history._connection()
+            try:
+                managed_ids = {row['run_id'] for row in conn.execute('SELECT run_id FROM jobs')}
+                orphaned = [dict(row) for row in history.execute("SELECT run_id, market FROM batch_runs WHERE status='running'") if row['run_id'] not in managed_ids]
+            finally:
+                history.close()
+            for market in MARKETS:
+                candidates = [row for row in orphaned if row['market'] == market]
+                if not candidates:
+                    continue
+                try:
+                    with MarketLock(self.config.lock_dir / f'{market.lower()}.lock'):
+                        for row in candidates:
+                            self._finish_history(row['run_id'], 'interrupted', '배치 서비스 시작 시 미종료 이력 정리')
+                except BatchAlreadyRunning:
+                    LOG.warning('시장 잠금 사용 중: 미종료 이력 정리 보류 %s', market)
             # 단일 서비스 잠금 아래에서만 전환합니다. 완료 이력의 모드는 유지합니다.
             for schedule in conn.execute('SELECT market, mode FROM schedules').fetchall():
                 mode = saved_mode(schedule['mode'])
@@ -144,15 +161,15 @@ class BatchManager:
         today = (now or datetime.now(UTC)).astimezone(SEOUL).date()
         dates = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
         union = '''WITH all_runs AS (
-            SELECT run_id, status, COALESCE(finished_at, started_at, created_at) AS event_at FROM jobs
+            SELECT run_id, status, COALESCE(finished_at, started_at, created_at) AS event_at, 1 AS managed FROM jobs
             UNION ALL
-            SELECT h.run_id, h.status, COALESCE(h.finished_at, h.started_at) FROM history.batch_runs h
+            SELECT h.run_id, h.status, COALESCE(h.finished_at, h.started_at), 0 FROM history.batch_runs h
             WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.run_id=h.run_id)
         ) '''
         with self.db() as conn:
             conn.execute('ATTACH DATABASE ? AS history', (str(self.config.database_path),))
             counts = conn.execute(union + '''SELECT COUNT(*) total_runs,
-                SUM(status IN ('running','cancelling')) running, SUM(status='queued') queued,
+                SUM(managed=1 AND status IN ('running','cancelling')) running, SUM(managed=1 AND status='queued') queued,
                 SUM(status='succeeded' AND date(event_at, '+9 hours')=?) today_succeeded,
                 SUM(status='failed' AND date(event_at, '+9 hours')=?) today_failed FROM all_runs''', (today.isoformat(), today.isoformat())).fetchone()
             rows = conn.execute(union + '''SELECT date(event_at, '+9 hours') day,
