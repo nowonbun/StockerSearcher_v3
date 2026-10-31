@@ -87,6 +87,38 @@ describe('handleStockApi', () => {
     )
   })
 
+  describe.each(['JP', 'KR'])('%s 스캐너 Ratio', (market) => {
+    it.each([
+      ['scanner', false, false],
+      ['lowerband-scanner', false, true],
+      ['scanner-weekly', true, false],
+      ['lowerband-scanner-weekly', true, true],
+    ] as const)('%s 쿼리는 소수 나눗셈과 0 분모 방어를 유지한다', async (endpoint, weekly, lower) => {
+      const bandColumn = lower ? 'lowerband60_1' : 'upperband60_1'
+      const ratioField = lower ? 'lowerband_ratio' : 'upperband_ratio'
+      const ratio = 19140 / 16058
+      mocks.getQuery.mockReturnValue({ market, date: '2026-10-30', trans_amnt_min: '1000', close_max: '100000' })
+      // DB는 격리하고 SQL 계약과 PostgreSQL numeric 문자열의 응답 변환을 검증한다.
+      mocks.queryRows.mockResolvedValue([
+        { date: '2026-10-30', code: 'TEST', close: '19140', band: '16058', ratio: String(ratio) },
+        { date: '2026-10-30', code: 'NULL', close: '19140', band: null, ratio: null },
+        { date: '2026-10-30', code: 'ZERO', close: '19140', band: '0', ratio: null },
+      ])
+
+      const result = await handleStockApi({} as never, endpoint)
+
+      expect(mocks.queryRows).toHaveBeenCalledWith(
+        expect.stringContaining(`sd.close::numeric / NULLIF(sd.${bandColumn}, 0)`),
+        ['2026-10-30', 1000, 100000],
+      )
+      expect(mocks.queryRows.mock.calls[0][0]).toContain(`FROM stock_data_split_${weekly ? 'week_' : ''}${market.toLowerCase()} sd`)
+      expect(result).toMatchObject({ rows: [
+        { [ratioField]: ratio }, { [ratioField]: null }, { [ratioField]: null },
+      ] })
+      expect(result.rows[0][ratioField].toFixed(4)).toBe('1.1919')
+    })
+  })
+
   it('reverses weekly series rows and omits daily-only moving averages', async () => {
     mocks.getQuery.mockReturnValue({ code: '7203', as_of: '2026-07-30' })
     mocks.queryRows.mockResolvedValue([

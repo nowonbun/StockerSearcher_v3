@@ -88,7 +88,7 @@ async function scanner(market: Market, date: string, transAmount: number, closeM
   const extraCondition = lower ? 'sd.lowerband60_1 < sd.close AND sd.close < sd."60mvavg"' : 'sd.close > sd.upperband60_1'
   const rows = await queryRows<Record<string, unknown>>(`
     SELECT sd.date, sd.code, sl.name, sd.close, sd.${bandColumn} AS band, sd."60mvavg" AS ma60,
-           sd.transamnt AS "transAmnt", (sd.close / NULLIF(sd.${bandColumn}, 0)) AS ratio
+           sd.transamnt AS "transAmnt", (sd.close::numeric / NULLIF(sd.${bandColumn}, 0)) AS ratio
     FROM ${dataTable} sd
     JOIN ${t.list} sl ON sl.code = sd.code
     WHERE sd.date = $1 AND ${extraCondition}
